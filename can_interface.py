@@ -271,8 +271,11 @@ def main():
     if bus is None:
         print("Error: Could not initialize CAN bus.")
         return
-    set_yellow_bat_led(bus, False)
+    # set_yellow_bat_led(bus, False)
 
-    # monitor_can_values(bus, interval=0.05, duration=100)  # Monitor for 10 seconds
+    # Monitor for 10 seconds
+    monitor_can_values(bus, interval=0.05, duration=100)
+
+
 if __name__ == "__main__":
     main()

@@ -42,42 +42,42 @@ void stop_can_monitor(void);
  * 
  * @return The enable button status (0 or 1), or default value if data is stale
  */
-int get_can_enable_safe(void);
+int get_can_enable(void);
 
 /**
  * Get the X-axis value safely
  * 
  * @return The X-axis value (0-255), or default value if data is stale
  */
-int get_can_x_axis_safe(void);
+int get_can_x_axis(void);
 
 /**
  * Get the Y-axis value safely
  * 
  * @return The Y-axis value (0-255), or default value if data is stale
  */
-int get_can_y_axis_safe(void);
+int get_can_y_axis(void);
 
 /**
  * Get the horn button status safely
  * 
  * @return The horn button status (0 or 1), or default value if data is stale
  */
-int get_can_horn_safe(void);
+int get_can_horn(void);
 
 /**
  * Get the emergency stop status safely
  * 
  * @return The emergency stop status (0 or 1), or default value if data is stale
  */
-int get_can_estop_safe(void);
+int get_can_estop(void);
 
 /**
  * Get the speed button status safely
  * 
  * @return The speed button status (0 or 1), or default value if data is stale
  */
-int get_can_speed_safe(void);
+int get_can_speed(void);
 
 /**
  * Print current CAN status for debugging

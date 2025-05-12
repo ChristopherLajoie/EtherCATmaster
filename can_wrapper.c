@@ -29,7 +29,7 @@ int initialize_python_can(void)
 
     Py_Initialize();
 
-    PyEval_InitThreads();
+    // PyEval_InitThreads();
 
     // Add current directory to Python path
     PyRun_SimpleString("import sys; sys.path.append('.')");
@@ -196,8 +196,8 @@ int set_led_state(const char *function_name, int state)
         Py_DECREF(pFunc);
         fprintf(stderr, "CAN bus not initialized\n");
         release_gil();
-        /
-            return 0;
+
+        return 0;
     }
 
     Py_INCREF(pBus);

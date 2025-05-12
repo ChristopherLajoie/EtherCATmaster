@@ -150,7 +150,7 @@ void stop_can_monitor(void)
     can_vars.monitoring_active = 0;
 }
 
-int get_can_enable_safe(void)
+int get_can_enable(void)
 {
     int result;
 
@@ -176,7 +176,7 @@ int get_can_enable_safe(void)
     return result;
 }
 
-int get_can_x_axis_safe(void)
+int get_can_x_axis(void)
 {
     int result;
 
@@ -195,7 +195,7 @@ int get_can_x_axis_safe(void)
     return result;
 }
 
-int get_can_y_axis_safe(void)
+int get_can_y_axis(void)
 {
     int result;
 
@@ -214,7 +214,7 @@ int get_can_y_axis_safe(void)
     return result;
 }
 
-int get_can_horn_safe(void)
+int get_can_horn(void)
 {
     int result;
 
@@ -233,7 +233,7 @@ int get_can_horn_safe(void)
     return result;
 }
 
-int get_can_estop_safe(void)
+int get_can_estop(void)
 {
     int result;
 
@@ -252,7 +252,7 @@ int get_can_estop_safe(void)
     return result;
 }
 
-int get_can_speed_safe(void)
+int get_can_speed(void)
 {
     int result;
 

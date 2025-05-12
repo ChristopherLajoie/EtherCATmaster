@@ -9,6 +9,7 @@
 #include "ethercat.h"
 #include "can_wrapper.h"
 #include "can_monitor.h"
+#include "coe_master.h"
 
 char IOmap[4096];
 int expectedWKC;
@@ -54,25 +55,420 @@ volatile int run = 1;
 #define DEFAULT_ACCELERATION 10000
 #define DEFAULT_DECELERATION 10000
 #define DEFAULT_QUICK_STOP_DEC 20000
+#define DEFAULT_MAX_VELOCITY 2000
+#define DEFAULT_MAX_TORQUE 3000 // t_max / t_rated * 1000
 
 /* PDO mapping offsets (may need adjustment) */
 #define OFFSET_CONTROLWORD 0       /* Byte offset for controlword in output PDO */
 #define OFFSET_MODE_OF_OPERATION 2 /* Byte offset for operation mode in output PDO */
 #define OFFSET_TARGET_VELOCITY 5   /* Byte offset for target velocity in output PDO */
 
-/* CiA402 drive states */
-typedef enum
+/* Initialize EtherCAT interface */
+int init_ethercat(char *ifname)
 {
-    STATE_NOT_READY_TO_SWITCH_ON = 0,
-    STATE_SWITCH_ON_DISABLED,
-    STATE_READY_TO_SWITCH_ON,
-    STATE_SWITCHED_ON,
-    STATE_OPERATION_ENABLED,
-    STATE_QUICK_STOP_ACTIVE,
-    STATE_FAULT_REACTION_ACTIVE,
-    STATE_FAULT
-} DriveState;
+    if (ec_init(ifname))
+    {
+        printf("Initialized on %s\n", ifname);
+        return 1;
+    }
+    return 0;
+}
 
+/* Find and configure all EtherCAT slaves */
+int discover_and_configure_slaves(void)
+{
+    int slc;
+    if (ec_config_init(FALSE) > 0)
+    {
+        printf("%d slaves found and configured.\n", ec_slavecount);
+
+        /* Verify if all drives are detected correctly */
+        for (slc = 1; slc <= ec_slavecount; slc++)
+        {
+            printf("Slave %d - Name: %s, Output size: %dbits, Input size: %dbits, State: %d\n",
+                   slc, ec_slave[slc].name, ec_slave[slc].Obits, ec_slave[slc].Ibits,
+                   ec_slave[slc].state);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* Configure PDO mapping for all slaves */
+void configure_pdo_mapping(void)
+{
+    int slc;
+
+    /* Configure PDO mappings explicitly */
+    for (slc = 1; slc <= ec_slavecount; slc++)
+    {
+        printf("Configuring PDOs for slave %d\n", slc);
+
+        // Set SM2 and SM3 PDO mappings
+        ec_slave[slc].SMtype[2] = 3; // SM2 is for outputs
+        ec_slave[slc].SMtype[3] = 4; // SM3 is for inputs
+
+        // Output PDO mappings
+        ec_slave[slc].Obits = 280;
+        ec_slave[slc].Ibits = 376;
+
+        // Update output and input lengths in bytes
+        ec_slave[slc].Obytes = 35;
+        ec_slave[slc].Ibytes = 47;
+
+        printf("Manual PDO config: Obits=%d, Ibits=%d, Obytes=%d, Ibytes=%d\n",
+               ec_slave[slc].Obits, ec_slave[slc].Ibits,
+               ec_slave[slc].Obytes, ec_slave[slc].Ibytes);
+    }
+
+    ec_config_map(&IOmap);
+    ec_configdc();
+
+    printf("Slaves mapped, state to SAFE_OP.\n");
+    /* Wait for all slaves to reach SAFE_OP state */
+    ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
+
+    for (slc = 1; slc <= ec_slavecount; slc++)
+    {
+        printf("Slave %d - State: %d\n", slc, ec_slave[slc].state);
+    }
+
+    expectedWKC = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
+    printf("Calculated workcounter %d\n", expectedWKC);
+}
+
+/* Transition all slaves to operational state */
+int transition_to_operational(void)
+{
+    int chk;
+
+    printf("Request operational state for all slaves\n");
+    ec_slave[0].state = EC_STATE_OPERATIONAL;
+
+    /* Request OP state for all slaves */
+    ec_writestate(0);
+
+    /* Wait for all slaves to reach OP state */
+    chk = 40;
+    do
+    {
+        ec_send_processdata();
+        ec_receive_processdata(EC_TIMEOUTRET);
+        ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
+    } while (chk-- && (ec_slave[0].state != EC_STATE_OPERATIONAL));
+
+    if (ec_slave[0].state == EC_STATE_OPERATIONAL)
+    {
+        printf("Operational state reached for all slaves.\n");
+        inOP = TRUE;
+        return 1;
+    }
+
+    /* Handle error case */
+    ec_readstate();
+    for (int slc = 1; slc <= ec_slavecount; slc++)
+    {
+        if (ec_slave[slc].state != EC_STATE_OPERATIONAL)
+        {
+            printf("Slave %d State=0x%2.2x StatusCode=0x%4.4x : %s\n",
+                   slc, ec_slave[slc].state, ec_slave[slc].ALstatuscode,
+                   ec_ALstatuscode2string(ec_slave[slc].ALstatuscode));
+        }
+    }
+    return 0;
+}
+
+/* Configure drives with SDO parameters */
+void configure_drives(void)
+{
+    int slc;
+
+    printf("Starting CiA402 state machine...\n");
+
+    for (slc = 1; slc <= ec_slavecount; slc++)
+    {
+        int32_t acceleration = DEFAULT_ACCELERATION;
+        int32_t deceleration = DEFAULT_DECELERATION;
+        int32_t quick_stop_dec = DEFAULT_QUICK_STOP_DEC;
+        uint32_t max_velocity = DEFAULT_MAX_VELOCITY;
+
+        /* Write SDO parameters */
+        int size = sizeof(acceleration);
+        int ret = ec_SDOwrite(slc, ACCELERATION_PROFILE, 0, FALSE, size, &acceleration, EC_TIMEOUTRXM);
+        printf("SDO write acceleration profile result: %d\n", ret);
+
+        size = sizeof(deceleration);
+        ret = ec_SDOwrite(slc, DECELERATION_PROFILE, 0, FALSE, size, &deceleration, EC_TIMEOUTRXM);
+        printf("SDO write deceleration profile result: %d\n", ret);
+
+        size = sizeof(quick_stop_dec);
+        ret = ec_SDOwrite(slc, QUICK_STOP_DECELERATION, 0, FALSE, size, &quick_stop_dec, EC_TIMEOUTRXM);
+        printf("SDO write quick stop deceleration result: %d\n", ret);
+
+        size = sizeof(max_velocity);
+        ret = ec_SDOwrite(slc, MAX_MOTOR_SPEED, 0, FALSE, size, &max_velocity, EC_TIMEOUTRXM);
+        printf("SDO write max motor speed result: %d\n", ret);
+
+        /* Initialize outputs with initial values */
+        memset(ec_slave[slc].outputs, 0, ec_slave[slc].Obytes);
+
+        // Set initial controlword to Reset Fault (bit 7)
+        *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_FAULT_RESET;
+
+        // Set profile velocity mode (3)
+        *(int8_t *)(ec_slave[slc].outputs + OFFSET_MODE_OF_OPERATION) = OP_MODE_PROFILE_VELOCITY;
+
+        // Set initial target velocity to 0
+        *(int32_t *)(ec_slave[slc].outputs + OFFSET_TARGET_VELOCITY) = 0;
+
+        // Send data
+        ec_send_processdata();
+        wkc = ec_receive_processdata(EC_TIMEOUTRET);
+
+        printf("Initial send/receive WKC: %d\n", wkc);
+        osal_usleep(100000); // 100ms delay to allow fault reset
+
+        // Now send SHUTDOWN command to start state machine
+        *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_SHUTDOWN;
+        ec_send_processdata();
+        wkc = ec_receive_processdata(EC_TIMEOUTRET);
+        osal_usleep(100000); // 100ms delay
+    }
+
+    /* Read SDO diagnostics */
+    for (slc = 1; slc <= ec_slavecount; slc++)
+    {
+        uint16_t statusword_sdo = 0;
+        int size = sizeof(statusword_sdo);
+        int ret = ec_SDOread(slc, DRIVE_STATUSWORD, 0, FALSE, &size, &statusword_sdo, EC_TIMEOUTRXM);
+        printf("SDO read statusword result: %d, value: 0x%04X\n", ret, statusword_sdo);
+
+        int8_t opmode = 0;
+        size = sizeof(opmode);
+        ret = ec_SDOread(slc, 0x6061, 0, FALSE, &size, &opmode, EC_TIMEOUTRXM);
+        printf("SDO read mode of operation display result: %d, value: %d\n", ret, opmode);
+
+        printf("Check if we are in profile velocity mode (expect 3): %d\n", opmode);
+    }
+}
+
+/* Main control loop */
+void run_control_loop(void)
+{
+    uint16_t statusword = 0;
+    uint16_t controlword = 0;
+    DriveState drive_state;
+    int cycle_counter = 0;
+    int enable_status = 0;
+    int operation_enabled = 0;
+    int prev_state = (DriveState)(-1);
+    int left_motor_velocity = 0;
+    int right_motor_velocity = 0;
+    int slc;
+
+    printf("Starting main control loop\n");
+    printf("Press any key to stop the program or Ctrl+C to exit.\n");
+
+    /* Run until user input or signal */
+    while (run && !kbhit())
+    {
+        /* Process PDO data */
+        ec_send_processdata();
+        wkc = ec_receive_processdata(EC_TIMEOUTRET);
+
+        enable_status = get_can_enable();
+
+        /* Status monitoring */
+        if (cycle_counter % 5000 == 0)
+        {
+            print_can_status();
+        }
+
+        /* Process controller input */
+        if (enable_status)
+        {
+            process_controller_input(&left_motor_velocity, &right_motor_velocity, cycle_counter);
+        }
+        else
+        {
+            left_motor_velocity = 0;
+            right_motor_velocity = 0;
+        }
+
+        /* Process working counter */
+        if (wkc >= expectedWKC)
+        {
+            /* First pass - process state machine */
+            for (slc = 1; slc <= ec_slavecount; slc++)
+            {
+                statusword = *(uint16_t *)(ec_slave[slc].inputs);
+                drive_state = get_drive_state(statusword);
+
+                /* Log state transitions */
+                if ((int)prev_state != (int)drive_state)
+                {
+                    const char *state_names[] = {
+                        "Not Ready To Switch On",
+                        "Switch On Disabled",
+                        "Ready To Switch On",
+                        "Switched On",
+                        "Operation Enabled",
+                        "Quick Stop Active",
+                        "Fault Reaction Active",
+                        "Fault"};
+                    printf("Drive %d state changed: %s -> %s\n",
+                           slc,
+                           (prev_state >= 0) ? state_names[prev_state] : "Unknown",
+                           state_names[drive_state]);
+                    prev_state = drive_state;
+                }
+
+                /* Process state machine */
+                int temp_target_velocity = 0;
+                controlword = process_state_machine(drive_state, enable_status,
+                                                    &operation_enabled, &temp_target_velocity,
+                                                    cycle_counter);
+
+                /* Write control word */
+                *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = controlword;
+
+                /* Maintain profile velocity mode */
+                *(int8_t *)(ec_slave[slc].outputs + OFFSET_MODE_OF_OPERATION) = OP_MODE_PROFILE_VELOCITY;
+            }
+
+            /* Second pass - apply velocities if operational */
+            if (operation_enabled)
+            {
+                /* Set velocities for motors */
+                if (ec_slavecount >= 1)
+                {
+                    *(int32_t *)(ec_slave[1].outputs + OFFSET_TARGET_VELOCITY) = left_motor_velocity;
+
+                    if (cycle_counter % 1000 == 0)
+                    {
+                        int32_t actual_velocity = *(int32_t *)(ec_slave[1].inputs + 4);
+                        printf("Left Motor: Target=%d, Actual=%d\n", left_motor_velocity, actual_velocity);
+                    }
+                }
+
+                if (ec_slavecount >= 2)
+                {
+                    *(int32_t *)(ec_slave[2].outputs + OFFSET_TARGET_VELOCITY) = right_motor_velocity;
+
+                    if (cycle_counter % 1000 == 0)
+                    {
+                        int32_t actual_velocity = *(int32_t *)(ec_slave[2].inputs + 4);
+                        printf("Right Motor: Target=%d, Actual=%d\n", right_motor_velocity, actual_velocity);
+                    }
+                }
+            }
+        }
+        else
+        {
+            /* Working counter error handling */
+            if (cycle_counter % 1000 == 0)
+            {
+                printf("Working counter error - expected: %d, got: %d\n", expectedWKC, wkc);
+            }
+
+            if (cycle_counter % 10000 == 0)
+            {
+                printf("Too many working counter errors, consider stopping\n");
+            }
+        }
+
+        cycle_counter++;
+        osal_usleep(1000); // 1ms cycle time
+    }
+}
+
+/* Graceful shutdown of drives */
+void shutdown_drives(void)
+{
+    int slc;
+
+    printf("Shutting down...\n");
+    for (slc = 1; slc <= ec_slavecount; slc++)
+    {
+        /* Set velocity to zero */
+        *(int32_t *)(ec_slave[slc].outputs + OFFSET_TARGET_VELOCITY) = 0;
+
+        /* Send velocity zero command */
+        ec_send_processdata();
+        wkc = ec_receive_processdata(EC_TIMEOUTRET);
+        osal_usleep(500000); // 500ms to allow deceleration
+
+        /* Disable operation */
+        *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_DISABLE_OPERATION;
+        ec_send_processdata();
+        wkc = ec_receive_processdata(EC_TIMEOUTRET);
+        osal_usleep(100000); // 100ms delay
+
+        /* Disable voltage */
+        *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_DISABLE_VOLTAGE;
+        ec_send_processdata();
+        wkc = ec_receive_processdata(EC_TIMEOUTRET);
+    }
+
+    inOP = FALSE;
+
+    printf("Request safe operational state for all slaves\n");
+    ec_slave[0].state = EC_STATE_SAFE_OP;
+    ec_writestate(0);
+}
+
+/* Clean up EtherCAT resources */
+void cleanup_ethercat(void)
+{
+    printf("End control, close socket\n");
+    ec_close();
+}
+
+/* Implementation for coe_master_control that's called from main.c */
+void coe_master_control(char *ifname)
+{
+    /* Install signal handler for Ctrl+C */
+    signal(SIGINT, signal_handler);
+
+    printf("Starting EtherCAT master\n");
+    printf("Press any key to stop the program\n");
+
+    /* Initialize SOEM, bind socket to ifname */
+    if (!init_ethercat(ifname)) {
+        printf("No socket connection on %s\nExcecute as root\n", ifname);
+        return;
+    }
+
+    /* Find and auto-configure slaves */
+    if (!discover_and_configure_slaves()) {
+        printf("No slaves found!\n");
+        cleanup_ethercat();
+        return;
+    }
+
+    /* Configure PDO mappings */
+    configure_pdo_mapping();
+
+    /* Transition to operational state */
+    if (!transition_to_operational()) {
+        printf("Not all slaves reached operational state.\n");
+        /* Error handling here */
+        cleanup_ethercat();
+        return;
+    }
+
+    /* Configure drives with SDO parameters */
+    configure_drives();
+
+    /* Main control loop */
+    run_control_loop();
+
+    /* Graceful shutdown */
+    shutdown_drives();
+    cleanup_ethercat();
+}
+
+/* Signal handler for Ctrl+C */
 void signal_handler(int sig)
 {
     run = 0;
@@ -87,7 +483,7 @@ void signal_handler(int sig)
 }
 
 /* Non-blocking keyboard input check */
-int kbhit()
+int kbhit(void)
 {
     struct termios oldt, newt;
     int ch;
@@ -114,10 +510,70 @@ int kbhit()
     return 0;
 }
 
+/* Process controller input for differential drive system */
+void process_controller_input(int *left_motor_velocity, int *right_motor_velocity, int cycle_counter)
+{
+    int x_axis = get_can_x_axis();
+    int y_axis = get_can_y_axis();
+
+    int speed_button = get_can_speed();
+    int estop = get_can_estop();
+
+    // Handle emergency stop
+    if (estop) {
+        *left_motor_velocity = 0;
+        *right_motor_velocity = 0;
+        return;
+    }
+
+    // Convert to -124 to +124 range with center at 0
+    int y_centered = y_axis - 128;
+    int x_centered = x_axis - 128;
+
+    // Apply deadband to ignore small joystick movements
+    if (abs(y_centered) < 10)
+    {
+        y_centered = 0;
+    }
+
+    if (abs(x_centered) < 10)
+    {
+        x_centered = 0;
+    }
+
+    // Apply speed multiplier if speed button is pressed
+    int speed_multiplier = speed_button ? 2 : 1;
+
+    int base_speed = (y_centered * DEFAULT_VELOCITY * speed_multiplier) / 124;
+    int turn_component = (x_centered * DEFAULT_VELOCITY * speed_multiplier) / 124;
+
+    *left_motor_velocity = base_speed + turn_component;
+    *right_motor_velocity = base_speed - turn_component;
+
+    // Limit values to maximum allowed velocity
+    int max_velocity = DEFAULT_MAX_VELOCITY * speed_multiplier;
+
+    if (*left_motor_velocity > max_velocity)
+        *left_motor_velocity = max_velocity;
+    if (*left_motor_velocity < -max_velocity)
+        *left_motor_velocity = -max_velocity;
+
+    if (*right_motor_velocity > max_velocity)
+        *right_motor_velocity = max_velocity;
+    if (*right_motor_velocity < -max_velocity)
+        *right_motor_velocity = -max_velocity;
+
+    // Debug output
+    if (cycle_counter % 1000 == 0)
+    {
+        printf("Joystick: X=%d, Y=%d | Left Motor=%d, Right Motor=%d\n",
+               x_axis, y_axis, *left_motor_velocity, *right_motor_velocity);
+    }
+}
+
 /* Get the current state of the drive based on statusword */
 DriveState get_drive_state(uint16_t statusword)
 {
-
     if ((statusword & 0x4F) == 0x00)
         return STATE_NOT_READY_TO_SWITCH_ON;
     if ((statusword & 0x4F) == 0x40)
@@ -138,7 +594,9 @@ DriveState get_drive_state(uint16_t statusword)
     return STATE_FAULT;
 }
 
-uint16_t process_state_machine(DriveState state, int enable_status, int *operation_enabled, int *target_velocity, int cycle_counter)
+/* Process the CiA402 state machine */
+uint16_t process_state_machine(DriveState state, int enable_status, int *operation_enabled, 
+                              int *target_velocity, int cycle_counter)
 {
     uint16_t controlword = 0;
 
@@ -235,371 +693,4 @@ uint16_t process_state_machine(DriveState state, int enable_status, int *operati
     }
 
     return controlword;
-}
-
-void simpletest(char *ifname)
-{
-    int chk, slc;
-
-    /* Install signal handler for Ctrl+C */
-    signal(SIGINT, signal_handler);
-
-    printf("Starting EtherCAT master\n");
-    printf("Press any key to stop the program\n");
-
-    /* Initialize SOEM, bind socket to ifname */
-    if (ec_init(ifname))
-    {
-        printf("Initialized on %s\n", ifname);
-
-        /* Find and auto-configure slaves */
-        if (ec_config_init(FALSE) > 0)
-        {
-            printf("%d slaves found and configured.\n", ec_slavecount);
-
-            /* Verify if all drives are detected correctly */
-            for (slc = 1; slc <= ec_slavecount; slc++)
-            {
-                printf("Slave %d - Name: %s, Output size: %dbits, Input size: %dbits, State: %d\n",
-                       slc, ec_slave[slc].name, ec_slave[slc].Obits, ec_slave[slc].Ibits,
-                       ec_slave[slc].state);
-            }
-
-            /* REMOVE FOR REAL SLAVE : Configure PDO mappings explicitly */
-            for (slc = 1; slc <= ec_slavecount; slc++)
-            {
-                printf("Configuring PDOs for slave %d\n", slc);
-
-                // Set SM2 and SM3 PDO mappings explicitly
-                ec_slave[slc].SMtype[2] = 3; // SM2 is for outputs
-                ec_slave[slc].SMtype[3] = 4; // SM3 is for inputs
-
-                // Output PDO mappings
-                ec_slave[slc].Obits = 280;
-                ec_slave[slc].Ibits = 376;
-
-                // Update output and input lengths in bytes
-                ec_slave[slc].Obytes = 35;
-                ec_slave[slc].Ibytes = 47;
-
-                printf("Manual PDO config: Obits=%d, Ibits=%d, Obytes=%d, Ibytes=%d\n",
-                       ec_slave[slc].Obits, ec_slave[slc].Ibits,
-                       ec_slave[slc].Obytes, ec_slave[slc].Ibytes);
-            }
-            /* REMOVE FOR REAL SLAVE : Configure PDO mappings explicitly */
-
-            ec_config_map(&IOmap);
-            ec_configdc();
-
-            printf("Slaves mapped, state to SAFE_OP.\n");
-            /* Wait for all slaves to reach SAFE_OP state */
-            ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
-
-            for (slc = 1; slc <= ec_slavecount; slc++)
-            {
-                printf("Slave %d - State: %d\n", slc, ec_slave[slc].state);
-            }
-
-            expectedWKC = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
-            printf("Calculated workcounter %d\n", expectedWKC);
-
-            printf("Request operational state for all slaves\n");
-            ec_slave[0].state = EC_STATE_OPERATIONAL;
-
-            /* Request OP state for all slaves */
-            ec_writestate(0);
-
-            /* Wait for all slaves to reach OP state */
-            chk = 40;
-            do
-            {
-                ec_send_processdata();
-                ec_receive_processdata(EC_TIMEOUTRET);
-                ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
-            } while (chk-- && (ec_slave[0].state != EC_STATE_OPERATIONAL));
-
-            if (ec_slave[0].state == EC_STATE_OPERATIONAL)
-            {
-                printf("Operational state reached for all slaves.\n");
-                inOP = TRUE;
-
-                uint16_t statusword = 0;
-                uint16_t controlword = 0;
-                int32_t velocity_actual = 0;
-                DriveState drive_state;
-
-                printf("Starting CiA402 state machine...\n");
-
-                for (slc = 1; slc <= ec_slavecount; slc++)
-                {
-                    /* Configure profile velocity parameters via SDO before enabling the drive */
-                    int32_t acceleration = DEFAULT_ACCELERATION;
-                    int32_t deceleration = DEFAULT_DECELERATION;
-                    int32_t quick_stop_dec = DEFAULT_QUICK_STOP_DEC;
-                    uint32_t max_velocity = DEFAULT_VELOCITY * 2; // Set max to twice our target for safety
-
-                    /* Write acceleration profile */
-                    int size = sizeof(acceleration);
-                    int ret = ec_SDOwrite(slc, ACCELERATION_PROFILE, 0, FALSE, size, &acceleration, EC_TIMEOUTRXM);
-                    printf("SDO write acceleration profile result: %d\n", ret);
-
-                    /* Write deceleration profile */
-                    size = sizeof(deceleration);
-                    ret = ec_SDOwrite(slc, DECELERATION_PROFILE, 0, FALSE, size, &deceleration, EC_TIMEOUTRXM);
-                    printf("SDO write deceleration profile result: %d\n", ret);
-
-                    /* Write quick stop deceleration */
-                    size = sizeof(quick_stop_dec);
-                    ret = ec_SDOwrite(slc, QUICK_STOP_DECELERATION, 0, FALSE, size, &quick_stop_dec, EC_TIMEOUTRXM);
-                    printf("SDO write quick stop deceleration result: %d\n", ret);
-
-                    /* Write maximum motor speed */
-                    size = sizeof(max_velocity);
-                    ret = ec_SDOwrite(slc, MAX_MOTOR_SPEED, 0, FALSE, size, &max_velocity, EC_TIMEOUTRXM);
-                    printf("SDO write max motor speed result: %d\n", ret);
-
-                    /* Initialize outputs with initial values */
-                    memset(ec_slave[slc].outputs, 0, ec_slave[slc].Obytes);
-
-                    // Set initial controlword to Reset Fault (bit 7)
-                    *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_FAULT_RESET;
-
-                    // Set profile velocity mode (3)
-                    *(int8_t *)(ec_slave[slc].outputs + OFFSET_MODE_OF_OPERATION) = OP_MODE_PROFILE_VELOCITY;
-
-                    // Set initial target velocity to 0
-                    *(int32_t *)(ec_slave[slc].outputs + OFFSET_TARGET_VELOCITY) = 0;
-
-                    // Send data
-                    ec_send_processdata();
-                    wkc = ec_receive_processdata(EC_TIMEOUTRET);
-
-                    printf("Initial send/receive WKC: %d\n", wkc);
-                    osal_usleep(100000); // 100ms delay to allow fault reset
-
-                    // Now send SHUTDOWN command to start state machine
-                    *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_SHUTDOWN;
-                    ec_send_processdata();
-                    wkc = ec_receive_processdata(EC_TIMEOUTRET);
-                    osal_usleep(100000); // 100ms delay
-                }
-
-                /* Try reading via SDO for diagnostic purposes */
-                for (slc = 1; slc <= ec_slavecount; slc++)
-                {
-                    uint16_t statusword_sdo = 0;
-                    int size = sizeof(statusword_sdo);
-                    int ret = ec_SDOread(slc, DRIVE_STATUSWORD, 0, FALSE, &size, &statusword_sdo, EC_TIMEOUTRXM);
-                    printf("SDO read statusword result: %d, value: 0x%04X\n", ret, statusword_sdo);
-
-                    int8_t opmode = 0;
-                    size = sizeof(opmode);
-                    ret = ec_SDOread(slc, 0x6061, 0, FALSE, &size, &opmode, EC_TIMEOUTRXM);
-                    printf("SDO read mode of operation display result: %d, value: %d\n", ret, opmode);
-
-                    printf("Check if we are in profile velocity mode (expect 3): %d\n", opmode);
-                }
-
-                /* Main loop - stay in OP state until user input or error */
-                int cycle_counter = 0;
-                int target_velocity = 0;
-                int enable_status = 0;
-                int operation_enabled = 0;
-                int prev_state = (DriveState)(-1);
-
-                printf("Starting main control loop...\n");
-                printf("Press any key to stop the program or Ctrl+C to exit.\n");
-
-                /* Run until user input or signal */
-                while (run && !kbhit())
-                {
-                    /* Start processing PDO data */
-                    ec_send_processdata();
-                    wkc = ec_receive_processdata(EC_TIMEOUTRET);
-
-                    enable_status = get_can_enable_safe();
-
-                    /* Periodically print CAN status for monitoring */
-                    if (cycle_counter % 5000 == 0)
-                    { /* Every 5 seconds at 1ms cycle time */
-                        print_can_status();
-                    }
-
-                    /* Check if we received the expected working counter */
-                    if (wkc >= expectedWKC)
-                    {
-                        /* Process each slave */
-                        for (slc = 1; slc <= ec_slavecount; slc++)
-                        {
-                            /* Read statusword */
-                            statusword = *(uint16_t *)(ec_slave[slc].inputs);
-
-                            /* Get the current drive state */
-                            drive_state = get_drive_state(statusword);
-
-                            /* Log state transitions */
-                            if ((int)prev_state != (int)drive_state)
-                            {
-                                const char *state_names[] = {
-                                    "Not Ready To Switch On",
-                                    "Switch On Disabled",
-                                    "Ready To Switch On",
-                                    "Switched On",
-                                    "Operation Enabled",
-                                    "Quick Stop Active",
-                                    "Fault Reaction Active",
-                                    "Fault"};
-                                printf("Drive state changed: %s -> %s\n",
-                                       (prev_state >= 0) ? state_names[prev_state] : "Unknown",
-                                       state_names[drive_state]);
-                                prev_state = drive_state;
-                            }
-
-                            /* Read actual velocity (assuming it's at offset 4) */
-                            /* Exact offset might need adjustment based on PDO mapping */
-                            velocity_actual = *(int32_t *)(ec_slave[slc].inputs + 4);
-
-                            /* Debug output every 1000 cycles (1 second) */
-                            if (cycle_counter % 1000 == 0)
-                            {
-                                printf("Slave %d: State: %d, Statusword: 0x%04X, Actual Velocity: %d, Target: %d, Enable: %d\n",
-                                       slc, drive_state, statusword, velocity_actual, target_velocity, enable_status);
-                            }
-
-                            /* Process the CiA402 state machine */
-                            controlword = process_state_machine(drive_state, enable_status,
-                                                                &operation_enabled, &target_velocity,
-                                                                cycle_counter);
-
-                            /* Set velocity in PDO */
-                            *(int32_t *)(ec_slave[slc].outputs + OFFSET_TARGET_VELOCITY) = target_velocity;
-
-                            /* Maintain profile velocity mode */
-                            *(int8_t *)(ec_slave[slc].outputs + OFFSET_MODE_OF_OPERATION) = OP_MODE_PROFILE_VELOCITY;
-
-                            /* Write controlword */
-                            *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = controlword;
-                        }
-                    }
-                    else
-                    {
-                        /* Working counter error - log every 1000 cycles to avoid flooding */
-                        if (cycle_counter % 1000 == 0)
-                        {
-                            printf("Working counter error - expected: %d, got: %d\n", expectedWKC, wkc);
-                        }
-
-                        /* Check if we've had continuous errors for a long time */
-                        if (cycle_counter % 10000 == 0)
-                        {
-                            printf("Too many working counter errors, consider stopping\n");
-                        }
-                    }
-
-                    /* Increment cycle counter */
-                    cycle_counter++;
-
-                    /* Sleep for 1ms */
-                    osal_usleep(1000);
-                }
-
-                /* Graceful shutdown - stop motion and disable operation */
-                printf("Shutting down...\n");
-                for (slc = 1; slc <= ec_slavecount; slc++)
-                {
-                    /* Set velocity to zero */
-                    *(int32_t *)(ec_slave[slc].outputs + OFFSET_TARGET_VELOCITY) = 0;
-
-                    /* Send velocity zero command */
-                    ec_send_processdata();
-                    wkc = ec_receive_processdata(EC_TIMEOUTRET);
-                    osal_usleep(500000); // 500ms to allow deceleration
-
-                    /* Disable operation */
-                    *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_DISABLE_OPERATION;
-                    ec_send_processdata();
-                    wkc = ec_receive_processdata(EC_TIMEOUTRET);
-                    osal_usleep(100000); // 100ms delay
-
-                    /* Disable voltage */
-                    *(uint16_t *)(ec_slave[slc].outputs + OFFSET_CONTROLWORD) = COMMAND_DISABLE_VOLTAGE;
-                    ec_send_processdata();
-                    wkc = ec_receive_processdata(EC_TIMEOUTRET);
-                }
-
-                inOP = FALSE;
-            }
-            else
-            {
-                printf("Not all slaves reached operational state.\n");
-                ec_readstate();
-                for (slc = 1; slc <= ec_slavecount; slc++)
-                {
-                    if (ec_slave[slc].state != EC_STATE_OPERATIONAL)
-                    {
-                        printf("Slave %d State=0x%2.2x StatusCode=0x%4.4x : %s\n",
-                               slc, ec_slave[slc].state, ec_slave[slc].ALstatuscode, ec_ALstatuscode2string(ec_slave[slc].ALstatuscode));
-                    }
-                }
-            }
-
-            printf("Request safe operational state for all slaves\n");
-            ec_slave[0].state = EC_STATE_SAFE_OP;
-            /* request SAFE_OP state for all slaves */
-            ec_writestate(0);
-        }
-        else
-        {
-            printf("No slaves found!\n");
-        }
-
-        printf("End simple test, close socket\n");
-        /* Stop SOEM, close socket */
-        ec_close();
-    }
-    else
-    {
-        printf("No socket connection on %s\nExcecute as root\n", ifname);
-    }
-}
-
-int main(int argc, char *argv[])
-{
-    signal(SIGINT, signal_handler);
-
-    if (!initialize_python_can())
-    {
-        printf("Failed to initialize Python CAN interface, continuing without it\n");
-    }
-    else
-    {
-        acquire_gil();
-        set_yellow_bat_led(1);
-        release_gil();
-
-        if (!init_can_monitor())
-        {
-            printf("Warning: CAN monitoring disabled\n");
-        }
-    }
-
-    if (argc > 1)
-    {
-        simpletest(argv[1]);
-    }
-    else
-    {
-        printf("Usage: %s <network interface>\nExample: %s eth0\n", argv[0], argv[0]);
-    }
-
-    printf("End program\n");
-
-    acquire_gil();
-    set_yellow_bat_led(0);
-    release_gil();
-
-    stop_can_monitor();
-    _exit(0);
-
-    return 0;
 }
