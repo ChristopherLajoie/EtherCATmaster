@@ -8,23 +8,12 @@
 
 int main(int argc, char *argv[])
 {
-    signal(SIGINT, signal_handler);
+    // We don't need to set the signal handler here since it's done in coe_master_control
+    
+    printf("Starting in manual control mode (bypassing CAN interface)\n");
 
-    if (!initialize_python_can())
-    {
-        printf("Failed to initialize Python CAN interface, continuing without it\n");
-    }
-    else
-    {
-        acquire_gil();
-        set_yellow_bat_led(1);
-        release_gil();
-
-        if (!init_can_monitor())
-        {
-            printf("Warning: CAN monitoring disabled\n");
-        }
-    }
+    // Skip CAN initialization to simplify troubleshooting
+    // Leave it for later when EtherCAT communication is working
 
     if (argc > 1)
     {
@@ -36,12 +25,6 @@ int main(int argc, char *argv[])
     }
 
     printf("End program\n");
-
-    acquire_gil();
-    set_yellow_bat_led(0);
-    release_gil();
-
-    stop_can_monitor();
     _exit(0);
 
     return 0;
