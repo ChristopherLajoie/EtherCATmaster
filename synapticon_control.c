@@ -86,7 +86,6 @@ struct termios orig_termios;
 void signal_handler(int sig);
 void print_extended_error(int slave);
 bool setup_ethercat();
-int map_joystick_to_velocity(int joy_value);
 bool state_machine_control(uint16_t *controlword, uint16_t statusword, int target_state);
 void *cyclic_task(void *arg);
 void read_drive_parameters();
@@ -364,6 +363,7 @@ bool setup_ethercat()
             ec_writestate(0);
 
             read_velocity_scaling();
+            calculate_velocity_conversion();
 
             // Configure distributed clock
             printf("Configuring DC...\n");
@@ -456,6 +456,64 @@ bool setup_ethercat()
     return false;
 }
 
+// Fix for velocity conversion calculation
+// Modify the read_velocity_scaling function to properly set the global variables:
+
+void read_velocity_scaling(void)
+{
+    // Read SI unit velocity
+    int ret, size;
+    uint32_t u32;
+    size = sizeof(u32);
+
+    ret = ec_SDOread(slave_index, 0x60A9, 0, FALSE, &size, &u32, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        si_unit_velocity = u32;
+        printf("SI‑unit velocity (0x60A9): 0x%08X\n", u32);
+
+        // Decode SI unit in detail
+        uint8_t unit_type = (u32 >> 16) & 0xFF;
+        uint8_t unit_expt = (u32 >> 24) & 0xFF;
+        uint8_t prefix_code = u32 & 0xFF;
+        printf("  Unit breakdown: Type=0x%02X, Exp=0x%02X, Prefix=0x%02X\n",
+               unit_type, unit_expt, prefix_code);
+
+        if (unit_type == 0xB4)
+        {
+            printf("  Unit type is Angular Velocity\n");
+        }
+    }
+
+    // Try to read feed constant for additional insights
+    size = sizeof(feed_numerator); // Use the global variable directly
+    ret = ec_SDOread(slave_index, 0x6092, 1, FALSE, &size, &feed_numerator, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Feed constant numerator (0x6092:1): %d\n", feed_numerator);
+    }
+
+    size = sizeof(feed_denominator); // Use the global variable directly
+    ret = ec_SDOread(slave_index, 0x6092, 2, FALSE, &size, &feed_denominator, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Feed constant denominator (0x6092:2): %d\n", feed_denominator);
+    }
+
+    // Read other relevant parameters
+    int32_t vel_offset = 0;
+    size = sizeof(vel_offset);
+    ret = ec_SDOread(slave_index, 0x60B1, 0, FALSE, &size, &vel_offset, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Velocity offset (0x60B1): %d\n", vel_offset);
+    }
+
+    // We're going to use raw values directly, so set scale factor to 1.0
+    velocity_scale_factor = 1.0f; // No scaling
+    printf("Using direct raw velocity values (no scaling)\n");
+}
+
 void read_drive_parameters()
 {
     int ret;
@@ -463,6 +521,7 @@ void read_drive_parameters()
     uint32_t u32val;
     uint16_t u16val;
     int8_t i8val;
+    int32_t i32val;
 
     // Read maximum motor speed
     u32val = 0;
@@ -475,6 +534,42 @@ void read_drive_parameters()
     else
     {
         printf("Failed to read max motor speed\n");
+    }
+
+    // Try to read velocity limit
+    i32val = 0;
+    size = sizeof(i32val);
+    ret = ec_SDOread(slave_index, 0x607F, 0, FALSE, &size, &i32val, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Max profile velocity (0x607F): %d\n", i32val);
+        printf("  This is approximately %.2f RPM\n", (float)i32val / 262144.0f);
+    }
+
+    // Try to read min/max velocity limit
+    i32val = 0;
+    size = sizeof(i32val);
+    ret = ec_SDOread(slave_index, 0x607E, 1, FALSE, &size, &i32val, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Min velocity limit (0x607E:1): %d\n", i32val);
+    }
+
+    i32val = 0;
+    size = sizeof(i32val);
+    ret = ec_SDOread(slave_index, 0x607E, 2, FALSE, &size, &i32val, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Max velocity limit (0x607E:2): %d\n", i32val);
+    }
+
+    // Velocity window values
+    i32val = 0;
+    size = sizeof(i32val);
+    ret = ec_SDOread(slave_index, 0x606D, 0, FALSE, &size, &i32val, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Velocity window (0x606D): %d\n", i32val);
     }
 
     // Read supported operation modes
@@ -542,67 +637,6 @@ void read_drive_parameters()
     }
 }
 
-/**
- * Read user‑unit / scaling objects and the current target velocity
- *   0x60A9  – SI‑unit velocity          (UINT32)
- *   0x6092  – Feed constant             (UINT32 numerator / denominator)
- *   0x60FF  – Target velocity           (INT32, read‑back)
- */
-void read_velocity_scaling(void)
-{
-    // Read SI unit velocity
-    int ret, size;
-    uint32_t u32;
-    size = sizeof(u32);
-
-    ret = ec_SDOread(slave_index, 0x60A9, 0, FALSE, &size, &u32, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        si_unit_velocity = u32;
-        printf("SI‑unit velocity (0x60A9): 0x%08X\n", u32);
-
-        // Extract the prefix code (last byte) and calculate the actual prefix multiplier
-        uint8_t prefix_code = (u32 & 0xFF);
-        float prefix_multiplier = 1.0f;
-
-        if ((prefix_code & 0xF0) > 0)
-        {
-            // Process prefix codes: 0x10=10^-1, 0x20=10^-2, etc.
-            int exponent = -(prefix_code >> 4);
-            prefix_multiplier = powf(10.0f, exponent);
-            printf("Detected prefix code 0x%02X, applying multiplier: %.6f\n",
-                   prefix_code, prefix_multiplier);
-        }
-
-        // Calculate overall velocity conversion factor
-        if (u32 == 0x00B44700)
-        {
-            // Default RPM setting
-            velocity_scale_factor = 1.0f * prefix_multiplier;
-            printf("Using RPM scaling with factor: %.6f\n", velocity_scale_factor);
-        }
-        else
-        {
-            // Different unit base, would need more complex conversion
-            printf("WARNING: Non-standard SI unit base detected\n");
-            velocity_scale_factor = 0.5f * prefix_multiplier; // Conservative default
-        }
-
-        // If target RPM could exceed Q15 range, apply further reduction
-        if (MAX_VELOCITY * velocity_scale_factor > 16000.0f)
-        {
-            float safety_factor = 16000.0f / (MAX_VELOCITY * velocity_scale_factor);
-            printf("Applying additional safety scaling: %.3f to keep within Q15 range\n",
-                   safety_factor);
-            velocity_scale_factor *= safety_factor;
-        }
-    }
-
-    // Report final scaling details
-    printf("Final velocity scaling factor: %.6f\n", velocity_scale_factor);
-    printf("Maximum velocity command: %.1f\n", MAX_VELOCITY * 0.1f * velocity_scale_factor);
-}
-
 bool read_error_details(bool print_details)
 {
     uint16_t error_code = 0;
@@ -658,34 +692,6 @@ bool read_error_details(bool print_details)
     }
 
     return false; // No error
-}
-
-int map_joystick_to_velocity(int joy_value)
-{
-    // Dead zone implementation
-    if (abs(joy_value) < 3000)
-    {
-        return 0;
-    }
-
-    // Map joystick value to velocity in RPM
-    float normalized = (float)joy_value / (float)(joy_value >= 0 ? JOY_MAX_VAL : -JOY_MIN_VAL);
-    
-    // Calculate RPM with higher scaling to avoid truncation to zero
-    float rpm_scale = 0.01f;  // 1% instead of 0.1%
-    int32_t target_rpm = (int32_t)(normalized * MAX_VELOCITY * rpm_scale);
-    
-    // Ensure we have a minimum value for small movements
-    if (normalized != 0.0f && target_rpm == 0)
-    {
-        // Send at least ±1 RPM when joystick is moved past dead zone
-        target_rpm = (normalized > 0) ? 1 : -1;
-    }
-    
-    printf("Joystick: %d, Normalized: %.3f, Target RPM: %d\n", 
-           joy_value, normalized, target_rpm);
-    
-    return target_rpm;
 }
 
 /**
@@ -856,6 +862,47 @@ bool state_machine_control(uint16_t *controlword, uint16_t statusword, int targe
 
     // Fixed: Added default return to fix warning
     return false; // Should never reach here but added for safety
+}
+
+void calculate_velocity_conversion(void)
+{
+    printf("DEBUG: Starting velocity conversion calculation\n");
+    printf("DEBUG: feed_numerator=%d, feed_denominator=%d\n", feed_numerator, feed_denominator);
+
+    // Given feed constant numerator of 262144, we can calculate the conversion factor
+    // between RPM and the raw values expected by the drive
+
+    // The feed constant (0x6092) defines the relationship between user units (RPM)
+    // and internal units used by the drive
+
+    if (feed_numerator > 0 && feed_denominator > 0)
+    {
+        // Calculate conversion factor for velocity (RPM to drive units)
+        float conversion = (float)feed_numerator / (float)feed_denominator;
+
+        printf("Calculated velocity conversion: 1 RPM = %.2f drive units\n", conversion);
+        printf("Calculated velocity conversion: 1 drive unit = %.10f RPM\n", 1.0f / conversion);
+
+        // For a feed constant of 262144:1, this means:
+        // 1 RPM = 262144 drive units
+        // 1 drive unit = 0.0000038147 RPM
+
+        // Example conversions:
+        printf("Example conversions:\n");
+        printf("  1 drive unit ≈ %.10f RPM\n", 1.0f / conversion);
+        printf("  10 drive units ≈ %.8f RPM\n", 10.0f / conversion);
+        printf("  100 drive units ≈ %.6f RPM\n", 100.0f / conversion);
+        printf("  1000 drive units ≈ %.4f RPM\n", 1000.0f / conversion);
+
+        // How many drive units for 1 RPM?
+        printf("  1 RPM ≈ %.0f drive units\n", conversion);
+        printf("  10 RPM ≈ %.0f drive units\n", 10.0f * conversion);
+        printf("  100 RPM ≈ %.0f drive units\n", 100.0f * conversion);
+    }
+    else
+    {
+        printf("ERROR: Cannot calculate velocity conversion - invalid feed constants\n");
+    }
 }
 
 /**
@@ -1302,9 +1349,8 @@ void *cyclic_task(void *arg)
                     break;
 
                 case PHASE_STABILIZATION:
-                    // Keep motor in enabled state with zero velocity for stabilization
-                    rxpdo->controlword = CW_ENABLE; // Use CW_ENABLE (0x000F) not CW_ENABLE_VOLTAGE (0x001F)
-                    rxpdo->target_velocity = 0;     // Ensure zero velocity during stabilization
+
+                    rxpdo->target_velocity = 0; // Ensure zero velocity during stabilization
 
                     stabilization_counter++;
                     if (stabilization_counter % 50 == 0)
@@ -1420,31 +1466,131 @@ void *cyclic_task(void *arg)
 
                 // Command rate limiting - only update velocity commands at reduced rate
                 command_counter++;
+                // Command rate limiting is no longer needed since we only send
+                // velocity commands when they change
 
-                // Only update target velocity at reduced rate
-                if (command_counter >= COMMAND_UPDATE_RATE)
+                // Not in fault - normal operation
+                in_fault_state = false;
+
+                // Use CW_ENABLE to keep the drive in operational state
+                rxpdo->controlword = CW_ENABLE;
+
+                // Check if drive is in a valid state to receive commands
+                if (txpdo->statusword & SW_OPERATION_ENABLED_BIT)
                 {
-                    command_counter = 0;
+                    // Simple keyboard control for velocity
+                    static int32_t current_velocity = 0;
+                    static int32_t requested_velocity = 0;
+                    static bool first_run = true;
+                    static int log_interval = 0;
+                    static int32_t actual_vel_sum = 0;
+                    static int actual_vel_count = 0;
 
-                    // Check if drive is in a valid state to receive commands
-                    if (txpdo->statusword & SW_OPERATION_ENABLED_BIT)
+                    // First time setup
+                    if (first_run)
                     {
-                        // Simulate joystick input (replace with actual joystick code)
-                        // Here we're just creating a sine wave for testing - slowed down by 5x
-                        static int angle_counter = 0;
-                        angle_counter++;
-                        joystick_value = (int)(sin((double)angle_counter / 500.0) * JOY_MAX_VAL);
+                        printf("\n==============================================================\n");
+                        printf("CSV Mode Velocity Control - Keyboard Commands:\n");
+                        printf("  '0' - Stop (set velocity to 0)\n");
+                        printf("  '1' - Set velocity to +10,000 (~0.04 RPM)\n");
+                        printf("  '2' - Set velocity to +50,000 (~0.2 RPM)\n");
+                        printf("  '3' - Set velocity to +100,000 (~0.4 RPM)\n");
+                        printf("  '4' - Set velocity to +200,000 (~0.8 RPM)\n");
+                        printf("  '5' - Set velocity to +500,000 (~1.9 RPM)\n");
+                        printf("  '6' - Set velocity to +1,000,000 (~3.8 RPM)\n");
+                        printf("  'q' - Set velocity to -10,000 (~-0.04 RPM)\n");
+                        printf("  'w' - Set velocity to -50,000 (~-0.2 RPM)\n");
+                        printf("  'e' - Set velocity to -100,000 (~-0.4 RPM)\n");
+                        printf("  'r' - Set velocity to -200,000 (~-0.8 RPM)\n");
+                        printf("==============================================================\n\n");
 
-                        // Map joystick value to velocity - update only on command_counter cycles
-                        int new_velocity = map_joystick_to_velocity(joystick_value);
+                        // Initialize current velocity to zero
+                        current_velocity = 0;
+                        rxpdo->target_velocity = current_velocity;
+                        printf("Initialized velocity to 0\n");
+                        first_run = false;
+                    }
 
-                        // Only update if velocity has changed significantly
-                        if (new_velocity != last_velocity)  // Changed from abs(new_velocity - last_velocity) > 20
+                    // Check for keyboard input
+                    if (kbhit())
+                    {
+                        char key = readch();
+                        switch (key)
                         {
-                            rxpdo->target_velocity = new_velocity;
-                            last_velocity = new_velocity;
-                            printf("Updated velocity command: %d\n", new_velocity);
+                        case '0':
+                            requested_velocity = 0;
+                            break;
+                        case '1':
+                            requested_velocity = 10000;
+                            break;
+                        case '2':
+                            requested_velocity = 50000;
+                            break;
+                        case '3':
+                            requested_velocity = 100000;
+                            break;
+                        case '4':
+                            requested_velocity = 200000;
+                            break;
+                        case '5':
+                            requested_velocity = 500000;
+                            break;
+                        case '6':
+                            requested_velocity = 1000000;
+                            break;
+                        case 'q':
+                            requested_velocity = -10000;
+                            break;
+                        case 'w':
+                            requested_velocity = -50000;
+                            break;
+                        case 'e':
+                            requested_velocity = -100000;
+                            break;
+                        case 'r':
+                            requested_velocity = -200000;
+                            break;
                         }
+                    }
+
+                    // Only update the velocity if it has changed
+                    if (requested_velocity != current_velocity)
+                    {
+                        // Reset averaging when changing velocity
+                        actual_vel_sum = 0;
+                        actual_vel_count = 0;
+
+                        // Update the velocity
+                        current_velocity = requested_velocity;
+                        rxpdo->target_velocity = current_velocity;
+                        printf("\n===== SETTING VELOCITY TO %d (≈%.4f RPM) =====\n\n",
+                               current_velocity, (float)current_velocity / 262144.0f);
+                    }
+
+                    // Accumulate actual velocity values for averaging
+                    actual_vel_sum += txpdo->velocity_actual;
+                    actual_vel_count++;
+
+                    // Only log periodically to avoid flooding the console
+                    log_interval++;
+                    if (log_interval >= 250)
+                    { // Every second (at 250Hz)
+                        // Calculate average velocity
+                        float avg_velocity = 0;
+                        if (actual_vel_count > 0)
+                        {
+                            avg_velocity = (float)actual_vel_sum / actual_vel_count;
+                        }
+
+                        // Print status
+                        printf("CSV: Target=%d (≈%.4f RPM) | Actual=%d | Avg Actual=%.1f | Status=0x%04X\n",
+                               current_velocity, (float)current_velocity / 262144.0f,
+                               txpdo->velocity_actual, avg_velocity, txpdo->statusword);
+
+                        // Reset for next interval
+                        log_interval = 0;
+                        actual_vel_sum = 0;
+                        actual_vel_count = 0;
                     }
                 }
 
@@ -1460,19 +1606,15 @@ void *cyclic_task(void *arg)
                            joystick_value, rxpdo->target_velocity, txpdo->velocity_actual,
                            txpdo->statusword, txpdo->op_mode_display);
 
-                    // Check if motor is responding
-                    if (abs(rxpdo->target_velocity) > 0 && abs(txpdo->velocity_actual) < 10)
+                    // Check if motor is responding - with more appropriate threshold
+                    if (abs(rxpdo->target_velocity) > 2000 && abs(txpdo->velocity_actual) < 100)
                     {
+                        // Only warn if we're sending a significant command but seeing very little response
                         printf("WARNING: Motor not responding to velocity commands\n");
-
-                        // Add some diagnostics but don't overwhelm with info
-                        uint16_t limit_status = 0;
-                        int size = sizeof(limit_status);
-                        int ret = ec_SDOread(slave_index, 0x60F6, 0, FALSE, &size, &limit_status, EC_TIMEOUTRXM);
-                        if (ret > 0 && limit_status != 0)
-                        {
-                            printf("Limit status (0x60F6): 0x%04X\n", limit_status);
-                        }
+                        printf("  Target: %d (≈%.4f RPM), Actual: %d\n",
+                               rxpdo->target_velocity,
+                               (float)rxpdo->target_velocity / 262144.0f,
+                               txpdo->velocity_actual);
                     }
                 }
             }
@@ -1483,6 +1625,18 @@ void *cyclic_task(void *arg)
     }
 
     return NULL;
+}
+
+// Convert RPM to drive units
+int32_t rpm_to_drive_units(float rpm)
+{
+    return (int32_t)(rpm * 262144.0f);
+}
+
+// Convert drive units to RPM
+float drive_units_to_rpm(int32_t units)
+{
+    return (float)units / 262144.0f;
 }
 
 /**
