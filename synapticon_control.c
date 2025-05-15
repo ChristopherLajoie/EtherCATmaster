@@ -7,8 +7,8 @@
 #include <pthread.h>
 #include <math.h>
 #include <signal.h>
-#include <termios.h> // Added for terminal control
-#include <fcntl.h>   // Added for non-blocking input
+#include <termios.h>
+#include <fcntl.h>
 
 #include "ethercat.h"
 #include "ethercatprint.h"
@@ -22,8 +22,8 @@
 // CiA 402 state machine commands (controlword)
 #define CW_SHUTDOWN 0x0006
 #define CW_SWITCHON 0x0007
-#define CW_ENABLE 0x000F         // Enable operation
-#define CW_ENABLE_VOLTAGE 0x001F // Enable with additional operation mode specific bits
+#define CW_ENABLE 0x000F
+#define CW_ENABLE_VOLTAGE 0x001F
 #define CW_QUICKSTOP 0x0002
 #define CW_DISABLEVOLTAGE 0x0000
 #define CW_DISABLEOPERATION 0x0007
@@ -73,11 +73,11 @@ char IOmap[4096];
 pthread_t thread1;
 
 // Add these global variables at the top of your file with the other globals
-uint32_t si_unit_velocity = 0;        // 0x60A9
-uint32_t feed_numerator = 0;          // 0x6092:1
-uint32_t feed_denominator = 1;        // 0x6092:2
-float velocity_conversion_factor = 1.0f; // Will be calculated based on scaling parameters
-float velocity_scale_factor = 1.0f; // Default to 1:1 ratio
+uint32_t si_unit_velocity = 0; // 0x60A9
+uint32_t feed_numerator = 0;   // 0x6092:1
+uint32_t feed_denominator = 1; // 0x6092:2
+float velocity_conversion_factor = 1.0f;
+float velocity_scale_factor = 1.0f;
 
 // Terminal settings for keyboard input
 struct termios orig_termios;
@@ -93,10 +93,10 @@ void read_drive_parameters();
 void cleanup_and_exit();
 bool read_error_details(bool print_details);
 bool perform_fault_reset(rxpdo_t *rxpdo, txpdo_t *txpdo);
-void enable_raw_mode();  // Added for keyboard input
-void disable_raw_mode(); // Added for keyboard input
-int kbhit();             // Added to check if a key was pressed
-char readch();           // Added to read a character
+void enable_raw_mode();
+void disable_raw_mode();
+int kbhit();
+char readch();
 
 // Setup terminal for raw input mode
 void enable_raw_mode()
@@ -550,59 +550,59 @@ void read_drive_parameters()
  */
 void read_velocity_scaling(void)
 {
+    // Read SI unit velocity
     int ret, size;
     uint32_t u32;
-    int32_t i32;
-
-    /* --- 0x60A9 : SI‑unit velocity ------------------------------------ */
     size = sizeof(u32);
+
     ret = ec_SDOread(slave_index, 0x60A9, 0, FALSE, &size, &u32, EC_TIMEOUTRXM);
-    if (ret > 0) {
+    if (ret > 0)
+    {
         si_unit_velocity = u32;
         printf("SI‑unit velocity (0x60A9): 0x%08X\n", u32);
-        
+
         // Extract the prefix code (last byte) and calculate the actual prefix multiplier
         uint8_t prefix_code = (u32 & 0xFF);
         float prefix_multiplier = 1.0f;
-        if (prefix_code > 0) {
-            // Prefix codes: 0x10 = 10^-1, 0x20 = 10^-2, etc.
-            prefix_multiplier = powf(10.0f, -((float)(prefix_code >> 4)));
+
+        if ((prefix_code & 0xF0) > 0)
+        {
+            // Process prefix codes: 0x10=10^-1, 0x20=10^-2, etc.
+            int exponent = -(prefix_code >> 4);
+            prefix_multiplier = powf(10.0f, exponent);
+            printf("Detected prefix code 0x%02X, applying multiplier: %.6f\n",
+                   prefix_code, prefix_multiplier);
         }
-        printf("Velocity prefix multiplier: %f\n", prefix_multiplier);
-        
-        // Based on the SI unit, determine the appropriate scale factor
-        // 0x00B44700 indicates RPM (1 rpm)
-        if (u32 == 0x00B44700) {
-            velocity_scale_factor = 1.0f;  // Direct RPM value
-            printf("Using 1:1 velocity scaling (direct RPM values)\n");
+
+        // Calculate overall velocity conversion factor
+        if (u32 == 0x00B44700)
+        {
+            // Default RPM setting
+            velocity_scale_factor = 1.0f * prefix_multiplier;
+            printf("Using RPM scaling with factor: %.6f\n", velocity_scale_factor);
         }
-    } else {
-        printf("Could not read 0x60A9 (SDO abort 0x%08X)\n", ret);
+        else
+        {
+            // Different unit base, would need more complex conversion
+            printf("WARNING: Non-standard SI unit base detected\n");
+            velocity_scale_factor = 0.5f * prefix_multiplier; // Conservative default
+        }
+
+        // If target RPM could exceed Q15 range, apply further reduction
+        if (MAX_VELOCITY * velocity_scale_factor > 16000.0f)
+        {
+            float safety_factor = 16000.0f / (MAX_VELOCITY * velocity_scale_factor);
+            printf("Applying additional safety scaling: %.3f to keep within Q15 range\n",
+                   safety_factor);
+            velocity_scale_factor *= safety_factor;
+        }
     }
 
-    /* Also read the feed constant for diagnostic purposes only */
-    size = sizeof(u32);
-    ret = ec_SDOread(slave_index, 0x6092, 1, FALSE, &size, &u32, EC_TIMEOUTRXM);
-    feed_numerator = (ret > 0) ? u32 : 1;
-    
-    ret = ec_SDOread(slave_index, 0x6092, 2, FALSE, &size, &u32, EC_TIMEOUTRXM);
-    feed_denominator = (ret > 0) ? u32 : 1;
-    
-    printf("Feed constant (0x6092): numerator = %u / denominator = %u\n",
-           feed_numerator, feed_denominator);
-
-    /* --- 0x60FF : Target velocity -------------------------------------- */
-    size = sizeof(i32);
-    ret = ec_SDOread(slave_index, 0x60FF, 0, FALSE, &size, &i32, EC_TIMEOUTRXM);
-    if (ret > 0) {
-        printf("Target velocity (0x60FF): %d (raw user units)\n", i32);
-    } else {
-        printf("Could not read 0x60FF (SDO abort 0x%08X)\n", ret);
-    }
+    // Report final scaling details
+    printf("Final velocity scaling factor: %.6f\n", velocity_scale_factor);
+    printf("Maximum velocity command: %.1f\n", MAX_VELOCITY * 0.1f * velocity_scale_factor);
 }
 
-
-// Enhanced function to read and analyze fault details
 bool read_error_details(bool print_details)
 {
     uint16_t error_code = 0;
@@ -668,24 +668,24 @@ int map_joystick_to_velocity(int joy_value)
         return 0;
     }
 
-    // Map joystick value to velocity
+    // Map joystick value to velocity in RPM
     float normalized = (float)joy_value / (float)(joy_value >= 0 ? JOY_MAX_VAL : -JOY_MIN_VAL);
-
-    // Calculate target velocity (reduced to 10% of max velocity for safety)
-    float target_velocity = normalized * MAX_VELOCITY * 0.1f;
     
-    // Apply our scaling factor - in this case, it's 1.0, so we're just using RPM directly
-    int32_t final_velocity = (int32_t)(target_velocity * velocity_scale_factor);
-
-    // Add some debug info for velocity commands
-    static int last_velocity = 0;
-    if (final_velocity != 0 && last_velocity == 0)
+    // Calculate RPM with higher scaling to avoid truncation to zero
+    float rpm_scale = 0.01f;  // 1% instead of 0.1%
+    int32_t target_rpm = (int32_t)(normalized * MAX_VELOCITY * rpm_scale);
+    
+    // Ensure we have a minimum value for small movements
+    if (normalized != 0.0f && target_rpm == 0)
     {
-        printf("Sending non-zero velocity command: %d RPM\n", final_velocity);
+        // Send at least ±1 RPM when joystick is moved past dead zone
+        target_rpm = (normalized > 0) ? 1 : -1;
     }
-    last_velocity = final_velocity;
-
-    return final_velocity;
+    
+    printf("Joystick: %d, Normalized: %.3f, Target RPM: %d\n", 
+           joy_value, normalized, target_rpm);
+    
+    return target_rpm;
 }
 
 /**
@@ -1439,7 +1439,7 @@ void *cyclic_task(void *arg)
                         int new_velocity = map_joystick_to_velocity(joystick_value);
 
                         // Only update if velocity has changed significantly
-                        if (abs(new_velocity - last_velocity) > 20)
+                        if (new_velocity != last_velocity)  // Changed from abs(new_velocity - last_velocity) > 20
                         {
                             rxpdo->target_velocity = new_velocity;
                             last_velocity = new_velocity;
