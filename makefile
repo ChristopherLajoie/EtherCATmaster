@@ -15,7 +15,7 @@ OSAL_DIR = SOEM/osal
 OSAL_LINUX_DIR = SOEM/osal/linux
 
 # Include directories
-INCLUDES = -I$(SOEM_DIR) -I$(OSHW_DIR) -I$(OSAL_DIR) -I$(OSAL_LINUX_DIR) -I.
+INCLUDES = -Iinclude -I$(SOEM_DIR) -I$(OSHW_DIR) -I$(OSAL_DIR) -I$(OSAL_LINUX_DIR) -I. $(PYTHON_CFLAGS)
 
 # SOEM object files
 SOEM_OBJ = $(SOEM_DIR)/ethercatbase.o \
@@ -34,14 +34,21 @@ OSHW_OBJ = $(OSHW_DIR)/nicdrv.o \
 # OSAL object files
 OSAL_OBJ = $(OSAL_LINUX_DIR)/osal.o
 
+# CAN interface object files (kept in root directory)
+CAN_OBJ = can_wrapper.o can_monitor.o
+
 # Application object files
-APP_OBJ = main.o coe_master.o can_wrapper.o can_monitor.o
+APP_OBJ = src/main.o \
+          src/ethercat_driver.o \
+          src/cia402_state.o \
+          src/motor_control.o \
+          src/terminal_io.o
 
 # All object files
-OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(APP_OBJ)
+OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(CAN_OBJ) $(APP_OBJ)
 
 # Target executable
-TARGET = coe_master
+TARGET = motor_control
 
 # Detect Python version for linking
 ifeq ($(shell pkg-config --exists python$(PYTHON_VERSION) && echo yes),yes)
@@ -68,25 +75,30 @@ $(OSHW_OBJ): %.o: %.c
 $(OSAL_OBJ): %.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# Compile the Python wrapper with Python includes
-can_wrapper.o: can_wrapper.c can_wrapper.h
-	$(CC) $(CFLAGS) $(INCLUDES) $(PYTHON_CFLAGS) -c $< -o $@
-    
-# Compile CAN monitor
-can_monitor.o: can_monitor.c can_monitor.h
+# Compile CAN wrapper (in root directory)
+can_wrapper.o: can_wrapper.c include/can_wrapper.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# Compile COE master module
-coe_master.o: coe_master.c coe_master.h
+# Compile CAN monitor (in root directory)
+can_monitor.o: can_monitor.c include/can_monitor.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# Compile main program
-main.o: main.c coe_master.h
+# Compile application source files
+src/%.o: src/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# Check Python interface exists
+copy_python_interface:
+	@if [ -f can_interface.py ]; then \
+		echo "CAN Python interface already exists"; \
+	else \
+		echo "Error: can_interface.py not found!"; \
+		exit 1; \
+	fi
 
 # Link everything together
-$(TARGET): $(OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS) $(PYTHON_LINK)
+$(TARGET): copy_python_interface $(OBJ)
+	$(CC) -o $@ $(OBJ) $(LDFLAGS) $(PYTHON_LDFLAGS) $(PYTHON_LIBS) $(PYTHON_LINK)
 
 # Print Python configuration
 python-config:
@@ -99,4 +111,4 @@ python-config:
 clean:
 	rm -f $(OBJ) $(TARGET)
 
-.PHONY: all clean soem python-config
+.PHONY: all clean soem python-config copy_python_interface
