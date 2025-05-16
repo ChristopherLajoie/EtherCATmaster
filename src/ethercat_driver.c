@@ -3,7 +3,7 @@
 
 bool ethercat_init() 
 {
-    int i, chk;
+    int chk;
     
     // Initialize SOEM, bind socket to ifname
     if (ec_init(g_motor_control.ifname))

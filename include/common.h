@@ -15,7 +15,16 @@
 #include "ethercat.h"
 #include "ethercatprint.h"
 
-// Global constants
+#define OP_MODE_PVM 3
+#define OP_MODE_CSV 9
+
+// Controlword bits for profile velocity mode
+#define CW_NEW_SETPOINT 0x0010     // Bit 4 - Start the positioning (rising edge 0->1)
+#define CW_CHANGE_SET_IMMED 0x0020 // Bit 5 - Change setpoint immediately
+
+// Statusword bits for profile velocity mode
+#define SW_SPEED_BIT 0x1000          // Bit 12
+
 #define MAX_VELOCITY 2500
 
 // Joystick parameters
@@ -44,9 +53,6 @@
 #define SW_SWITCH_ON_DISABLED_BIT (0x1 << 6)
 #define SW_TARGET_REACHED_BIT (0x1 << 10)
 
-// Operation modes
-#define OP_MODE_CSV 9 // Cyclic Synchronous Velocity mode
-
 // RxPDO (master to slave)
 #pragma pack(push, 1) // no implicit padding
 typedef struct
@@ -74,7 +80,8 @@ typedef struct
 #pragma pack(pop)
 
 // Global data structure
-typedef struct {
+typedef struct
+{
     char *ifname;
     int cycletime;
     volatile sig_atomic_t run;

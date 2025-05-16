@@ -9,8 +9,7 @@ MotorControl g_motor_control = {
     .ifname = "eth0",
     .cycletime = 4000, // 4ms cycle time (250Hz)
     .run = 1,
-    .slave_index = 1
-};
+    .slave_index = 1};
 
 // Signal handler
 void signal_handler(int sig)
@@ -61,6 +60,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    g_motor_control.rxpdo->op_mode = OP_MODE_PVM; // CHANGE MODE HERE
+
     // Create cyclic task thread
     if (pthread_create(&g_motor_control.cyclic_thread, NULL, motor_control_cyclic_task, NULL) != 0)
     {
@@ -77,7 +78,7 @@ int main(int argc, char *argv[])
     while (g_motor_control.run)
     {
         sleep(1);
-        
+
         // Print CAN status periodically
         static int status_counter = 0;
         if (status_counter++ % 5 == 0)
