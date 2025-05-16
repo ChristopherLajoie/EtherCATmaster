@@ -13,11 +13,7 @@
 #include "ethercat.h"
 #include "ethercatprint.h"
 
-#define JOY_MIN_VAL -32768
-#define JOY_MAX_VAL 32767
-#define MAX_VELOCITY 2500 // Maximum velocity in RPM - must be <= max_speed set in 0x6080
-
-#define COMMAND_UPDATE_RATE 25 // Only update velocity command every N cycles (25 = 100ms at 4ms cycle)
+#define MAX_VELOCITY 2500 
 
 // CiA 402 state machine commands (controlword)
 #define CW_SHUTDOWN 0x0006
@@ -43,18 +39,21 @@
 #define OP_MODE_CSV 9 // Cyclic Synchronous Velocity mode
 
 // RxPDO (master to slave)
+#pragma pack(push, 1)          // no implicit padding
 typedef struct
 {
     uint16_t controlword;    // 0x6040
-    int8_t op_mode;          // 0x6060
-    int16_t target_torque;   // 0x6071
-    int32_t target_position; // 0x607A
-    int32_t target_velocity; // 0x60FF
-    int16_t torque_offset;   // 0x60B2
-    int32_t tuning_command;  // 0x2701
+    int8_t   op_mode;        // 0x6060
+    int16_t  target_torque;  // 0x6071
+    int32_t  target_position;// 0x607A
+    int32_t  target_velocity;// 0x60FF
+    int16_t  torque_offset;  // 0x60B2
+    int32_t  tuning_command; // 0x2701
 } rxpdo_t;
+#pragma pack(pop)
 
 // TxPDO (slave to master)
+#pragma pack(push, 1) 
 typedef struct
 {
     uint16_t statusword;     // 0x6041
@@ -63,6 +62,7 @@ typedef struct
     int16_t velocity_actual; // 0x606C
     int16_t torque_actual;   // 0x6077
 } txpdo_t;
+#pragma pack(pop)
 
 // Global variables
 char *ifname = "eth0";
@@ -72,12 +72,9 @@ int slave_index = 1;
 char IOmap[4096];
 pthread_t thread1;
 
-// Add these global variables at the top of your file with the other globals
 uint32_t si_unit_velocity = 0; // 0x60A9
 uint32_t feed_numerator = 0;   // 0x6092:1
 uint32_t feed_denominator = 1; // 0x6092:2
-float velocity_conversion_factor = 1.0f;
-float velocity_scale_factor = 1.0f;
 
 // Terminal settings for keyboard input
 struct termios orig_termios;
@@ -363,7 +360,7 @@ bool setup_ethercat()
             ec_writestate(0);
 
             read_velocity_scaling();
-            calculate_velocity_conversion();
+            //ec_printPDO(slave_index, ec_slave[slave_index].outputs, sizeof(rxpdo_t));
 
             // Configure distributed clock
             printf("Configuring DC...\n");
@@ -456,9 +453,6 @@ bool setup_ethercat()
     return false;
 }
 
-// Fix for velocity conversion calculation
-// Modify the read_velocity_scaling function to properly set the global variables:
-
 void read_velocity_scaling(void)
 {
     // Read SI unit velocity
@@ -508,10 +502,6 @@ void read_velocity_scaling(void)
     {
         printf("Velocity offset (0x60B1): %d\n", vel_offset);
     }
-
-    // We're going to use raw values directly, so set scale factor to 1.0
-    velocity_scale_factor = 1.0f; // No scaling
-    printf("Using direct raw velocity values (no scaling)\n");
 }
 
 void read_drive_parameters()
@@ -534,6 +524,16 @@ void read_drive_parameters()
     else
     {
         printf("Failed to read max motor speed\n");
+    }
+
+    ret = ec_SDOread(slave_index, 0x60A9, 0, FALSE, &size, &u32val, EC_TIMEOUTRXM);
+    if (ret > 0)
+    {
+        printf("Power of Ten is (0x60A9): %d\n", u32val);
+    }
+    else
+    {
+        printf("Failed to read\n");
     }
 
     // Try to read velocity limit
@@ -563,25 +563,6 @@ void read_drive_parameters()
         printf("Max velocity limit (0x607E:2): %d\n", i32val);
     }
 
-    // Velocity window values
-    i32val = 0;
-    size = sizeof(i32val);
-    ret = ec_SDOread(slave_index, 0x606D, 0, FALSE, &size, &i32val, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Velocity window (0x606D): %d\n", i32val);
-    }
-
-    // Read supported operation modes
-    i8val = 0;
-    size = sizeof(i8val);
-    ret = ec_SDOread(slave_index, 0x6502, 0, FALSE, &size, &i8val, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Supported modes (0x6502): 0x%02X\n", i8val);
-        printf("  CSV mode supported: %s\n", (i8val & (1 << (OP_MODE_CSV - 1))) ? "Yes" : "No");
-    }
-
     // Read current limit
     u32val = 0;
     size = sizeof(u32val);
@@ -591,26 +572,6 @@ void read_drive_parameters()
         printf("Max current (0x6073): %d mA\n", u32val);
     }
 
-    // Read motor type
-    u16val = 0;
-    size = sizeof(u16val);
-    ret = ec_SDOread(slave_index, 0x2020, 0, FALSE, &size, &u16val, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Motor type (0x2020): %d ", u16val);
-        switch (u16val)
-        {
-        case 10:
-            printf("(PMSM)\n");
-            break;
-        case 20:
-            printf("(Stepper)\n");
-            break;
-        default:
-            printf("(Unknown)\n");
-            break;
-        }
-    }
 
     // Read current operation mode
     i8val = 0;
@@ -864,47 +825,6 @@ bool state_machine_control(uint16_t *controlword, uint16_t statusword, int targe
     return false; // Should never reach here but added for safety
 }
 
-void calculate_velocity_conversion(void)
-{
-    printf("DEBUG: Starting velocity conversion calculation\n");
-    printf("DEBUG: feed_numerator=%d, feed_denominator=%d\n", feed_numerator, feed_denominator);
-
-    // Given feed constant numerator of 262144, we can calculate the conversion factor
-    // between RPM and the raw values expected by the drive
-
-    // The feed constant (0x6092) defines the relationship between user units (RPM)
-    // and internal units used by the drive
-
-    if (feed_numerator > 0 && feed_denominator > 0)
-    {
-        // Calculate conversion factor for velocity (RPM to drive units)
-        float conversion = (float)feed_numerator / (float)feed_denominator;
-
-        printf("Calculated velocity conversion: 1 RPM = %.2f drive units\n", conversion);
-        printf("Calculated velocity conversion: 1 drive unit = %.10f RPM\n", 1.0f / conversion);
-
-        // For a feed constant of 262144:1, this means:
-        // 1 RPM = 262144 drive units
-        // 1 drive unit = 0.0000038147 RPM
-
-        // Example conversions:
-        printf("Example conversions:\n");
-        printf("  1 drive unit ≈ %.10f RPM\n", 1.0f / conversion);
-        printf("  10 drive units ≈ %.8f RPM\n", 10.0f / conversion);
-        printf("  100 drive units ≈ %.6f RPM\n", 100.0f / conversion);
-        printf("  1000 drive units ≈ %.4f RPM\n", 1000.0f / conversion);
-
-        // How many drive units for 1 RPM?
-        printf("  1 RPM ≈ %.0f drive units\n", conversion);
-        printf("  10 RPM ≈ %.0f drive units\n", 10.0f * conversion);
-        printf("  100 RPM ≈ %.0f drive units\n", 100.0f * conversion);
-    }
-    else
-    {
-        printf("ERROR: Cannot calculate velocity conversion - invalid feed constants\n");
-    }
-}
-
 /**
  * Cyclic task to process PDOs
  */
@@ -953,8 +873,8 @@ void *cyclic_task(void *arg)
 
     // Initialize controlword, opmode, etc.
     rxpdo->controlword = 0;
-    rxpdo->op_mode = 0; // Will set this according to the proper sequence
-    rxpdo->target_velocity = 0;
+    rxpdo->op_mode = 0; 
+    //rxpdo->target_velocity = 0;
     rxpdo->target_torque = 0;
     rxpdo->torque_offset = 0;
 
@@ -963,10 +883,6 @@ void *cyclic_task(void *arg)
 
     struct timespec ts;
     struct timespec tleft;
-
-    // Command rate limiting
-    int command_counter = 0;
-    int last_velocity = 0;
 
     // Stabilization counter
     int stabilization_counter = 0;
@@ -1054,7 +970,6 @@ void *cyclic_task(void *arg)
                 }
 
                 // Periodic reconnection attempt - try every 1000 cycles (about 4 seconds)
-                // This gives you time to power the device back on
                 if (comm_errors % 1000 == 0)
                 {
                     printf("Attempting to reestablish connection (attempt %d)...\n", reconnection_attempts + 1);
@@ -1087,10 +1002,7 @@ void *cyclic_task(void *arg)
             // If connection is lost, skip the rest of the loop and try again next cycle
             if (connection_lost)
             {
-                // Enable continuous scanning mode after losing connection
-                continuous_scanning = true;
 
-                // Increment scan counter and try to reconnect periodically
                 scan_interval_counter++;
                 if (scan_interval_counter >= SCAN_INTERVAL)
                 {
@@ -1103,13 +1015,11 @@ void *cyclic_task(void *arg)
                         connection_lost = false;
                         continuous_scanning = false;
                         comm_errors = 0;
-                        // Rest of reconnection code...
                     }
 
                     scan_interval_counter = 0;
                 }
 
-                // Skip the rest of processing when connection is lost
                 continue;
             }
         }
@@ -1135,7 +1045,6 @@ void *cyclic_task(void *arg)
             }
             else
             {
-                // Normal operation - reset error counter
                 if (comm_errors > 0)
                 {
                     comm_errors = 0;
@@ -1350,7 +1259,7 @@ void *cyclic_task(void *arg)
 
                 case PHASE_STABILIZATION:
 
-                    rxpdo->target_velocity = 0; // Ensure zero velocity during stabilization
+                    //rxpdo->target_velocity = 0; // Ensure zero velocity during stabilization
 
                     stabilization_counter++;
                     if (stabilization_counter % 50 == 0)
@@ -1425,8 +1334,7 @@ void *cyclic_task(void *arg)
                     fault_counter = 1;
 
                     // Reset target velocity and prepare for reset
-                    rxpdo->target_velocity = 0;
-                    last_velocity = 0;
+                    //rxpdo->target_velocity = 0;
                 }
                 else
                 {
@@ -1438,7 +1346,6 @@ void *cyclic_task(void *arg)
                     }
                 }
 
-                // Try the enhanced fault reset
                 bool reset_success = perform_fault_reset(rxpdo, txpdo);
 
                 if (reset_success)
@@ -1458,139 +1365,28 @@ void *cyclic_task(void *arg)
             }
             else
             {
-                // Not in fault - normal operation
+               
                 in_fault_state = false;
-
-                // Use CW_ENABLE instead of CW_ENABLE_VOLTAGE
                 rxpdo->controlword = CW_ENABLE;
 
-                // Command rate limiting - only update velocity commands at reduced rate
-                command_counter++;
-                // Command rate limiting is no longer needed since we only send
-                // velocity commands when they change
-
-                // Not in fault - normal operation
-                in_fault_state = false;
-
-                // Use CW_ENABLE to keep the drive in operational state
-                rxpdo->controlword = CW_ENABLE;
-
-                // Check if drive is in a valid state to receive commands
                 if (txpdo->statusword & SW_OPERATION_ENABLED_BIT)
                 {
-                    // Simple keyboard control for velocity
+                    
                     static int32_t current_velocity = 0;
-                    static int32_t requested_velocity = 0;
-                    static bool first_run = true;
                     static int log_interval = 0;
-                    static int32_t actual_vel_sum = 0;
-                    static int actual_vel_count = 0;
+                    //rxpdo->target_velocity = (int32_t)(50 * (262144.0));
+                    rxpdo->target_velocity = (int32_t)(50);
 
-                    // First time setup
-                    if (first_run)
-                    {
-                        printf("\n==============================================================\n");
-                        printf("CSV Mode Velocity Control - Keyboard Commands:\n");
-                        printf("  '0' - Stop (set velocity to 0)\n");
-                        printf("  '1' - Set velocity to +10,000 (~0.04 RPM)\n");
-                        printf("  '2' - Set velocity to +50,000 (~0.2 RPM)\n");
-                        printf("  '3' - Set velocity to +100,000 (~0.4 RPM)\n");
-                        printf("  '4' - Set velocity to +200,000 (~0.8 RPM)\n");
-                        printf("  '5' - Set velocity to +500,000 (~1.9 RPM)\n");
-                        printf("  '6' - Set velocity to +1,000,000 (~3.8 RPM)\n");
-                        printf("  'q' - Set velocity to -10,000 (~-0.04 RPM)\n");
-                        printf("  'w' - Set velocity to -50,000 (~-0.2 RPM)\n");
-                        printf("  'e' - Set velocity to -100,000 (~-0.4 RPM)\n");
-                        printf("  'r' - Set velocity to -200,000 (~-0.8 RPM)\n");
-                        printf("==============================================================\n\n");
-
-                        // Initialize current velocity to zero
-                        current_velocity = 0;
-                        rxpdo->target_velocity = current_velocity;
-                        printf("Initialized velocity to 0\n");
-                        first_run = false;
-                    }
-
-                    // Check for keyboard input
-                    if (kbhit())
-                    {
-                        char key = readch();
-                        switch (key)
-                        {
-                        case '0':
-                            requested_velocity = 0;
-                            break;
-                        case '1':
-                            requested_velocity = 10000;
-                            break;
-                        case '2':
-                            requested_velocity = 50000;
-                            break;
-                        case '3':
-                            requested_velocity = 100000;
-                            break;
-                        case '4':
-                            requested_velocity = 200000;
-                            break;
-                        case '5':
-                            requested_velocity = 500000;
-                            break;
-                        case '6':
-                            requested_velocity = 1000000;
-                            break;
-                        case 'q':
-                            requested_velocity = -10000;
-                            break;
-                        case 'w':
-                            requested_velocity = -50000;
-                            break;
-                        case 'e':
-                            requested_velocity = -100000;
-                            break;
-                        case 'r':
-                            requested_velocity = -200000;
-                            break;
-                        }
-                    }
-
-                    // Only update the velocity if it has changed
-                    if (requested_velocity != current_velocity)
-                    {
-                        // Reset averaging when changing velocity
-                        actual_vel_sum = 0;
-                        actual_vel_count = 0;
-
-                        // Update the velocity
-                        current_velocity = requested_velocity;
-                        rxpdo->target_velocity = current_velocity;
-                        printf("\n===== SETTING VELOCITY TO %d (≈%.4f RPM) =====\n\n",
-                               current_velocity, (float)current_velocity / 262144.0f);
-                    }
-
-                    // Accumulate actual velocity values for averaging
-                    actual_vel_sum += txpdo->velocity_actual;
-                    actual_vel_count++;
-
-                    // Only log periodically to avoid flooding the console
                     log_interval++;
-                    if (log_interval >= 250)
-                    { // Every second (at 250Hz)
-                        // Calculate average velocity
-                        float avg_velocity = 0;
-                        if (actual_vel_count > 0)
-                        {
-                            avg_velocity = (float)actual_vel_sum / actual_vel_count;
-                        }
-
-                        // Print status
-                        printf("CSV: Target=%d (≈%.4f RPM) | Actual=%d | Avg Actual=%.1f | Status=0x%04X\n",
-                               current_velocity, (float)current_velocity / 262144.0f,
-                               txpdo->velocity_actual, avg_velocity, txpdo->statusword);
-
-                        // Reset for next interval
+                    if (log_interval >= 250) { // Every second (at 250Hz)
+                        // Print raw status values without averaging
+                        printf("CSV: Target=%d | Actual=%d\n",
+                            rxpdo->target_velocity,
+                               txpdo->velocity_actual);
+                        
+                        decode_statusword(txpdo->statusword);
+                        // Reset log interval
                         log_interval = 0;
-                        actual_vel_sum = 0;
-                        actual_vel_count = 0;
                     }
                 }
 
@@ -1599,14 +1395,7 @@ void *cyclic_task(void *arg)
                 status_counter++;
                 if (status_counter % 250 == 0)
                 {
-                    // Display status info
-                    printf("Controlword sent: 0x%04X | ", rxpdo->controlword);
-
-                    printf("Joy: %6d | Target Vel: %6d | Actual Vel: %6d | Statusword: 0x%04X | Op Mode: %d\n",
-                           joystick_value, rxpdo->target_velocity, txpdo->velocity_actual,
-                           txpdo->statusword, txpdo->op_mode_display);
-
-                    // Check if motor is responding - with more appropriate threshold
+           
                     if (abs(rxpdo->target_velocity) > 2000 && abs(txpdo->velocity_actual) < 100)
                     {
                         // Only warn if we're sending a significant command but seeing very little response
@@ -1627,16 +1416,52 @@ void *cyclic_task(void *arg)
     return NULL;
 }
 
-// Convert RPM to drive units
-int32_t rpm_to_drive_units(float rpm)
+void decode_statusword(uint16_t statusword)
 {
-    return (int32_t)(rpm * 262144.0f);
-}
-
-// Convert drive units to RPM
-float drive_units_to_rpm(int32_t units)
-{
-    return (float)units / 262144.0f;
+    // Basic State Machine bits
+    printf("Status 0x%04X - State Machine: ", statusword);
+    
+    // Decode the state machine bits (bits 0, 1, 2, 3, 5, 6)
+    uint8_t state_bits = statusword & 0x6F; // Mask for bits 0,1,2,3,5,6
+    
+    // State machine according to CiA 402
+    if (state_bits == 0x00) printf("Not ready to switch on\n");
+    else if (state_bits == 0x40) printf("Switch on disabled\n");
+    else if (state_bits == 0x21) printf("Ready to switch on\n");
+    else if (state_bits == 0x23) printf("Switched on\n");
+    else if (state_bits == 0x27) printf("Operation enabled\n");
+    else if (state_bits == 0x07) printf("Quick stop active\n");
+    else if (state_bits == 0x0F) printf("Fault reaction active\n");
+    else if (state_bits == 0x08) printf("Fault\n");
+    else printf("Unknown state (0x%02X)\n", state_bits);
+ 
+    // Row 1: Bits 0-3
+    printf("  0:%-20s  1:%-20s  2:%-20s  3:%-20s\n",
+           (statusword & (1 << 0)) ? "Ready to switch on" : "Not ready",
+           (statusword & (1 << 1)) ? "Switched on" : "Switched off",
+           (statusword & (1 << 2)) ? "Operation enabled" : "Op disabled",
+           (statusword & (1 << 3)) ? "Fault present" : "No fault");
+    
+    // Row 2: Bits 4-7
+    printf("  4:%-20s  5:%-20s  6:%-20s  7:%-20s\n",
+           (statusword & (1 << 4)) ? "Voltage enabled" : "Voltage disabled",
+           (statusword & (1 << 5)) ? "Quick stop disabled" : "Quick stop enabled",
+           (statusword & (1 << 6)) ? "Switch on disabled" : "Switch on enabled",
+           (statusword & (1 << 7)) ? "Warning present" : "No warning");
+    
+    // Row 3: Bits 8-11
+    printf("  8:%-20s  9:%-20s 10:%-20s 11:%-20s\n",
+           (statusword & (1 << 8)) ? "Manuf bit set" : "Manuf bit clear",
+           (statusword & (1 << 9)) ? "Remote operation" : "No remote",
+           (statusword & (1 << 10)) ? "Target reached" : "Target not reached",
+           (statusword & (1 << 11)) ? "Internal limit" : "No limit");
+    
+    // Row 4: Bits 12-15
+    printf(" 12:%-20s 13:%-20s 14:%-20s 15:%-20s\n",
+           (statusword & (1 << 12)) ? "Following command" : "Vel differs",
+           (statusword & (1 << 13)) ? "Following ramp" : "Not following ramp",
+           (statusword & (1 << 14)) ? "Manuf bit 14 set" : "Manuf bit 14 clear",
+           (statusword & (1 << 15)) ? "Manuf bit 15 set" : "Manuf bit 15 clear");
 }
 
 /**
