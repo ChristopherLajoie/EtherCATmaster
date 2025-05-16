@@ -15,7 +15,7 @@ OSAL_DIR = SOEM/osal
 OSAL_LINUX_DIR = SOEM/osal/linux
 
 # Include directories
-INCLUDES = -I$(SOEM_DIR) -I$(OSHW_DIR) -I$(OSAL_DIR) -I$(OSAL_LINUX_DIR) -I.
+INCLUDES = -I$(SOEM_DIR) -I$(OSHW_DIR) -I$(OSAL_DIR) -I$(OSAL_LINUX_DIR) -I. $(PYTHON_CFLAGS)
 
 # SOEM object files
 SOEM_OBJ = $(SOEM_DIR)/ethercatbase.o \
@@ -34,11 +34,14 @@ OSHW_OBJ = $(OSHW_DIR)/nicdrv.o \
 # OSAL object files
 OSAL_OBJ = $(OSAL_LINUX_DIR)/osal.o
 
+# CAN interface object files
+CAN_OBJ = can_wrapper.o can_monitor.o
+
 # Application object files
 APP_OBJ = synapticon_control.o
 
 # All object files
-OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(APP_OBJ)
+OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(CAN_OBJ) $(APP_OBJ)
 
 # Target executable
 TARGET = synapticon_control
@@ -68,13 +71,21 @@ $(OSHW_OBJ): %.o: %.c
 $(OSAL_OBJ): %.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+# Compile CAN wrapper
+can_wrapper.o: can_wrapper.c can_wrapper.h
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# Compile CAN monitor
+can_monitor.o: can_monitor.c can_monitor.h
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
 # Compile Synapticon motor control program
 synapticon_control.o: synapticon_control.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 # Link everything together
 $(TARGET): $(OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(PYTHON_LDFLAGS) $(PYTHON_LIBS) $(PYTHON_LINK)
 
 # Print Python configuration
 python-config:
@@ -86,7 +97,7 @@ python-config:
 
 # Rule to build with pre-installed SOEM library
 standalone:
-	$(CC) $(CFLAGS) -o $(TARGET) synapticon_control.c -lsoem $(LDFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET) synapticon_control.c can_wrapper.c can_monitor.c -lsoem $(LDFLAGS) $(PYTHON_LDFLAGS) $(PYTHON_LIBS) $(PYTHON_LINK)
 
 clean:
 	rm -f $(OBJ) $(TARGET)

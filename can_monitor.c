@@ -50,8 +50,10 @@ void *can_monitor_thread(void *arg)
 
     while (keep_running)
     {
+        // Always acquire and release in the same thread
         acquire_gil();
 
+        // Fetch all data in one batch with proper error handling
         temp_enable = get_enable_button();
         temp_x = get_x_axis();
         temp_y = get_y_axis();
@@ -59,10 +61,12 @@ void *can_monitor_thread(void *arg)
         temp_estop = get_estop_button();
         temp_speed = get_speed_button();
 
+        // Important: Release GIL before checking results or doing any other operations
         release_gil();
 
         valid_reading = 1;
 
+        // Verify readings only after releasing GIL
         if (temp_enable != 0 && temp_enable != 1)
         {
             valid_reading = 0;
@@ -88,7 +92,6 @@ void *can_monitor_thread(void *arg)
         }
         else
         {
-
             pthread_mutex_lock(&can_vars.mutex);
             can_vars.error_count++;
             pthread_mutex_unlock(&can_vars.mutex);
@@ -100,6 +103,7 @@ void *can_monitor_thread(void *arg)
                        can_vars.error_count, temp_enable, temp_x, temp_y);
             }
         }
+        
         pthread_testcancel();
 
         /* Sleep to avoid excessive CPU usage */

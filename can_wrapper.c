@@ -6,7 +6,7 @@
 
 static PyObject *pModule = NULL, *pBus = NULL;
 static int is_python_initialized = 0;
-static PyGILState_STATE gil_state;
+static __thread PyGILState_STATE gil_state;
 
 void acquire_gil(void)
 {
@@ -28,9 +28,10 @@ int initialize_python_can(void)
     }
 
     Py_Initialize();
-
-    // PyEval_InitThreads();
-
+    
+    // Important: Initialize threads support properly
+    PyEval_InitThreads();
+    
     // Add current directory to Python path
     PyRun_SimpleString("import sys; sys.path.append('.')");
 
@@ -65,7 +66,7 @@ int initialize_python_can(void)
 
     is_python_initialized = 1;
 
-    // Save main thread state and release GIL for other threads
+    // Release the GIL to allow other threads to use Python
     PyEval_SaveThread();
 
     return 1;
@@ -90,7 +91,7 @@ int get_single_bit(const char *function_name)
     {
         Py_XDECREF(pFunc);
         fprintf(stderr, "Cannot find function '%s'\n", function_name);
-        release_gil();
+        release_gil();  // Make sure to release GIL here
         return -1;
     }
 
@@ -100,7 +101,7 @@ int get_single_bit(const char *function_name)
         Py_DECREF(pArgs);
         Py_DECREF(pFunc);
         fprintf(stderr, "CAN bus not initialized\n");
-        release_gil();
+        release_gil();  // Make sure to release GIL here
         return -1;
     }
 
@@ -114,21 +115,21 @@ int get_single_bit(const char *function_name)
     if (pValue == NULL)
     {
         PyErr_Print();
-        release_gil();
+        release_gil();  // Make sure to release GIL here
         return -1;
     }
 
     if (pValue == Py_None)
     {
         Py_DECREF(pValue);
-        release_gil();
+        release_gil();  // Make sure to release GIL here
         return -1;
     }
 
     result = PyLong_AsLong(pValue);
     Py_DECREF(pValue);
 
-    release_gil();
+    release_gil();  // Standard release path
 
     return result;
 }

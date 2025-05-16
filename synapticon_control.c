@@ -10,10 +10,16 @@
 #include <termios.h>
 #include <fcntl.h>
 
+#include "can_monitor.h"
 #include "ethercat.h"
 #include "ethercatprint.h"
 
-#define MAX_VELOCITY 2500 
+#define MAX_VELOCITY 2500
+
+#define JOYSTICK_MIN 4
+#define JOYSTICK_MAX 252
+#define JOYSTICK_CENTER 128
+#define JOYSTICK_DEADZONE 10
 
 // CiA 402 state machine commands (controlword)
 #define CW_SHUTDOWN 0x0006
@@ -39,21 +45,21 @@
 #define OP_MODE_CSV 9 // Cyclic Synchronous Velocity mode
 
 // RxPDO (master to slave)
-#pragma pack(push, 1)          // no implicit padding
+#pragma pack(push, 1) // no implicit padding
 typedef struct
 {
     uint16_t controlword;    // 0x6040
-    int8_t   op_mode;        // 0x6060
-    int16_t  target_torque;  // 0x6071
-    int32_t  target_position;// 0x607A
-    int32_t  target_velocity;// 0x60FF
-    int16_t  torque_offset;  // 0x60B2
-    int32_t  tuning_command; // 0x2701
+    int8_t op_mode;          // 0x6060
+    int16_t target_torque;   // 0x6071
+    int32_t target_position; // 0x607A
+    int32_t target_velocity; // 0x60FF
+    int16_t torque_offset;   // 0x60B2
+    int32_t tuning_command;  // 0x2701
 } rxpdo_t;
 #pragma pack(pop)
 
 // TxPDO (slave to master)
-#pragma pack(push, 1) 
+#pragma pack(push, 1)
 typedef struct
 {
     uint16_t statusword;     // 0x6041
@@ -87,9 +93,10 @@ bool state_machine_control(uint16_t *controlword, uint16_t statusword, int targe
 void *cyclic_task(void *arg);
 void read_drive_parameters();
 void cleanup_and_exit();
-bool read_error_details(bool print_details);
+bool read_error_details();
 bool perform_fault_reset(rxpdo_t *rxpdo, txpdo_t *txpdo);
 void enable_raw_mode();
+int32_t map_joystick_to_velocity(int joystick_value, int speed_mode);
 void disable_raw_mode();
 int kbhit();
 char readch();
@@ -136,16 +143,6 @@ char readch()
     char ch;
     read(STDIN_FILENO, &ch, 1);
     return ch;
-}
-
-void print_extended_error(int slave)
-{
-    uint8_t txt[64] = {0};
-    int sz = sizeof(txt) - 1;
-    if (ec_SDOread(slave, 0x203F, 1, FALSE, &sz, txt, EC_TIMEOUTRXM) > 0)
-        printf("Extended error: %s\n", txt);
-    else
-        printf("Could not read 0x203F:1\n");
 }
 
 bool perform_fault_reset(rxpdo_t *rxpdo, txpdo_t *txpdo)
@@ -311,7 +308,6 @@ bool setup_ethercat()
 {
     int i, chk;
     uint16_t u16val;
-    uint32_t u32val;
     int size;
 
     // Initialize SOEM, bind socket to ifname
@@ -324,23 +320,10 @@ bool setup_ethercat()
         {
             printf("%d slaves found and configured.\n", ec_slavecount);
 
-            // Read device information
-            u32val = 0;
-            size = sizeof(u32val);
-            int ret = ec_SDOread(slave_index, 0x1000, 0, FALSE, &size, &u32val, EC_TIMEOUTRXM);
-            if (ret > 0)
-            {
-                printf("Device type: 0x%08X\n", u32val);
-            }
-            else
-            {
-                printf("Failed to read device type\n");
-            }
-
             // Read software version
             char sw_version[32] = {0};
             size = sizeof(sw_version) - 1;
-            ret = ec_SDOread(slave_index, 0x100A, 0, FALSE, &size, sw_version, EC_TIMEOUTRXM);
+            int ret = ec_SDOread(slave_index, 0x100A, 0, FALSE, &size, sw_version, EC_TIMEOUTRXM);
             if (ret > 0)
             {
                 printf("Software version: %s\n", sw_version);
@@ -358,9 +341,6 @@ bool setup_ethercat()
             // Set state to PRE_OP for configuration
             ec_slave[0].state = EC_STATE_PRE_OP;
             ec_writestate(0);
-
-            read_velocity_scaling();
-            //ec_printPDO(slave_index, ec_slave[slave_index].outputs, sizeof(rxpdo_t));
 
             // Configure distributed clock
             printf("Configuring DC...\n");
@@ -391,7 +371,7 @@ bool setup_ethercat()
                     if (c == ' ')
                     {
                         spacebar_pressed = true;
-                        printf("Spacebar pressed! Continuing to SAFE-OP state...\n");
+                        printf("Continuing to SAFE-OP state...\n");
                     }
                 }
                 usleep(50000); // 50ms sleep to avoid CPU hogging
@@ -453,65 +433,12 @@ bool setup_ethercat()
     return false;
 }
 
-void read_velocity_scaling(void)
-{
-    // Read SI unit velocity
-    int ret, size;
-    uint32_t u32;
-    size = sizeof(u32);
-
-    ret = ec_SDOread(slave_index, 0x60A9, 0, FALSE, &size, &u32, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        si_unit_velocity = u32;
-        printf("SI‑unit velocity (0x60A9): 0x%08X\n", u32);
-
-        // Decode SI unit in detail
-        uint8_t unit_type = (u32 >> 16) & 0xFF;
-        uint8_t unit_expt = (u32 >> 24) & 0xFF;
-        uint8_t prefix_code = u32 & 0xFF;
-        printf("  Unit breakdown: Type=0x%02X, Exp=0x%02X, Prefix=0x%02X\n",
-               unit_type, unit_expt, prefix_code);
-
-        if (unit_type == 0xB4)
-        {
-            printf("  Unit type is Angular Velocity\n");
-        }
-    }
-
-    // Try to read feed constant for additional insights
-    size = sizeof(feed_numerator); // Use the global variable directly
-    ret = ec_SDOread(slave_index, 0x6092, 1, FALSE, &size, &feed_numerator, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Feed constant numerator (0x6092:1): %d\n", feed_numerator);
-    }
-
-    size = sizeof(feed_denominator); // Use the global variable directly
-    ret = ec_SDOread(slave_index, 0x6092, 2, FALSE, &size, &feed_denominator, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Feed constant denominator (0x6092:2): %d\n", feed_denominator);
-    }
-
-    // Read other relevant parameters
-    int32_t vel_offset = 0;
-    size = sizeof(vel_offset);
-    ret = ec_SDOread(slave_index, 0x60B1, 0, FALSE, &size, &vel_offset, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Velocity offset (0x60B1): %d\n", vel_offset);
-    }
-}
-
 void read_drive_parameters()
 {
     int ret;
     int size;
     uint32_t u32val;
-    uint16_t u16val;
     int8_t i8val;
-    int32_t i32val;
 
     // Read maximum motor speed
     u32val = 0;
@@ -526,43 +453,6 @@ void read_drive_parameters()
         printf("Failed to read max motor speed\n");
     }
 
-    ret = ec_SDOread(slave_index, 0x60A9, 0, FALSE, &size, &u32val, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Power of Ten is (0x60A9): %d\n", u32val);
-    }
-    else
-    {
-        printf("Failed to read\n");
-    }
-
-    // Try to read velocity limit
-    i32val = 0;
-    size = sizeof(i32val);
-    ret = ec_SDOread(slave_index, 0x607F, 0, FALSE, &size, &i32val, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Max profile velocity (0x607F): %d\n", i32val);
-        printf("  This is approximately %.2f RPM\n", (float)i32val / 262144.0f);
-    }
-
-    // Try to read min/max velocity limit
-    i32val = 0;
-    size = sizeof(i32val);
-    ret = ec_SDOread(slave_index, 0x607E, 1, FALSE, &size, &i32val, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Min velocity limit (0x607E:1): %d\n", i32val);
-    }
-
-    i32val = 0;
-    size = sizeof(i32val);
-    ret = ec_SDOread(slave_index, 0x607E, 2, FALSE, &size, &i32val, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        printf("Max velocity limit (0x607E:2): %d\n", i32val);
-    }
-
     // Read current limit
     u32val = 0;
     size = sizeof(u32val);
@@ -571,7 +461,6 @@ void read_drive_parameters()
     {
         printf("Max current (0x6073): %d mA\n", u32val);
     }
-
 
     // Read current operation mode
     i8val = 0;
@@ -598,7 +487,7 @@ void read_drive_parameters()
     }
 }
 
-bool read_error_details(bool print_details)
+bool read_error_details()
 {
     uint16_t error_code = 0;
     int size = sizeof(error_code);
@@ -606,48 +495,19 @@ bool read_error_details(bool print_details)
 
     if (ret > 0 && error_code != 0)
     {
-        if (print_details)
-        {
-            printf("Error code: 0x%04X\n", error_code);
 
-            // Specific handling for common error codes
-            if (error_code == 0x6320)
-            { // Parameter Error
-                print_extended_error(slave_index);
-                printf("Detected parameter error (0x6320). The motor configuration may be incomplete.\n");
-                printf("Consider using OBLAC Drives software to properly configure the motor parameters.\n");
+        printf("Error code: 0x%04X\n", error_code);
+        uint8_t txt[64] = {0};
+        int sz = sizeof(txt) - 1;
+        if (ec_SDOread(slave_index, 0x203F, 1, FALSE, &sz, txt, EC_TIMEOUTRXM) > 0)
+            printf("Extended error: %s\n", txt);
+        else
+            printf("Could not read 0x203F:1\n");
 
-                // Try to read specific missing parameters
-                uint16_t specific_error = 0;
-                size = sizeof(specific_error);
-                ret = ec_SDOread(slave_index, 0x603F, 1, FALSE, &size, &specific_error, EC_TIMEOUTRXM);
-                if (ret > 0 && specific_error != 0)
-                {
-                    printf("Specific parameter error: 0x%04X\n", specific_error);
-                }
-
-                // Check for diagnostic registers that might give more details
-                uint32_t diagnostic_register = 0;
-                size = sizeof(diagnostic_register);
-
-                // Try manufacturer-specific diagnostic registers
-                ret = ec_SDOread(slave_index, 0x2000, 0, FALSE, &size, &diagnostic_register, EC_TIMEOUTRXM);
-                if (ret > 0)
-                {
-                    printf("Diagnostic register 0x2000: 0x%08X\n", diagnostic_register);
-                }
-
-                ret = ec_SDOread(slave_index, 0x2701, 0, FALSE, &size, &diagnostic_register, EC_TIMEOUTRXM);
-                if (ret > 0)
-                {
-                    printf("Diagnostic register 0x2701: 0x%08X\n", diagnostic_register);
-                }
-            }
-        }
         return true; // Error exists
     }
 
-    if (print_details && ret <= 0)
+    if (ret <= 0)
     {
         printf("Unable to read error code\n");
     }
@@ -693,8 +553,8 @@ bool state_machine_control(uint16_t *controlword, uint16_t statusword, int targe
     // Check for specific error code
     static bool error_checked = false;
     if (!error_checked && (statusword & SW_FAULT_BIT))
-    {                             // If fault bit is set
-        read_error_details(true); // Print error details
+    {                         // If fault bit is set
+        read_error_details(); // Print error details
         error_checked = true;
     }
 
@@ -825,20 +685,106 @@ bool state_machine_control(uint16_t *controlword, uint16_t statusword, int targe
     return false; // Should never reach here but added for safety
 }
 
-/**
- * Cyclic task to process PDOs
- */
+void decode_statusword(uint16_t statusword)
+{
+    // Basic State Machine bits
+    printf("Status 0x%04X - State Machine: ", statusword);
+
+    // Decode the state machine bits (bits 0, 1, 2, 3, 5, 6)
+    uint8_t state_bits = statusword & 0x6F; // Mask for bits 0,1,2,3,5,6
+
+    // State machine according to CiA 402
+    if (state_bits == 0x00)
+        printf("Not ready to switch on\n");
+    else if (state_bits == 0x40)
+        printf("Switch on disabled\n");
+    else if (state_bits == 0x21)
+        printf("Ready to switch on\n");
+    else if (state_bits == 0x23)
+        printf("Switched on\n");
+    else if (state_bits == 0x27)
+        printf("Operation enabled\n");
+    else if (state_bits == 0x07)
+        printf("Quick stop active\n");
+    else if (state_bits == 0x0F)
+        printf("Fault reaction active\n");
+    else if (state_bits == 0x08)
+        printf("Fault\n");
+    else
+        printf("Unknown state (0x%02X)\n", state_bits);
+
+    // Row 1: Bits 0-3
+    printf("  0:%-20s  1:%-20s  2:%-20s  3:%-20s\n",
+           (statusword & (1 << 0)) ? "Ready to switch on" : "Not ready",
+           (statusword & (1 << 1)) ? "Switched on" : "Switched off",
+           (statusword & (1 << 2)) ? "Operation enabled" : "Op disabled",
+           (statusword & (1 << 3)) ? "Fault present" : "No fault");
+
+    // Row 2: Bits 4-7
+    printf("  4:%-20s  5:%-20s  6:%-20s  7:%-20s\n",
+           (statusword & (1 << 4)) ? "Voltage enabled" : "Voltage disabled",
+           (statusword & (1 << 5)) ? "Quick stop disabled" : "Quick stop enabled",
+           (statusword & (1 << 6)) ? "Switch on disabled" : "Switch on enabled",
+           (statusword & (1 << 7)) ? "Warning present" : "No warning");
+
+    // Row 3: Bits 8-11
+    printf("  8:%-20s  9:%-20s 10:%-20s 11:%-20s\n",
+           (statusword & (1 << 8)) ? "Manuf bit set" : "Manuf bit clear",
+           (statusword & (1 << 9)) ? "Remote operation" : "No remote",
+           (statusword & (1 << 10)) ? "Target reached" : "Target not reached",
+           (statusword & (1 << 11)) ? "Internal limit" : "No limit");
+
+    // Row 4: Bits 12-15
+    printf(" 12:%-20s 13:%-20s 14:%-20s 15:%-20s\n",
+           (statusword & (1 << 12)) ? "Following command" : "Vel differs",
+           (statusword & (1 << 13)) ? "Following ramp" : "Not following ramp",
+           (statusword & (1 << 14)) ? "Manuf bit 14 set" : "Manuf bit 14 clear",
+           (statusword & (1 << 15)) ? "Manuf bit 15 set" : "Manuf bit 15 clear");
+}
+
+int32_t map_joystick_to_velocity(int joystick_value, int speed_mode)
+{
+    // Define deadzone range around center
+    int deadzone_min = JOYSTICK_CENTER - JOYSTICK_DEADZONE;
+    int deadzone_max = JOYSTICK_CENTER + JOYSTICK_DEADZONE;
+
+    // If joystick is in deadzone (center position ±10), return 0
+    if (joystick_value >= deadzone_min && joystick_value <= deadzone_max)
+    {
+        return 0;
+    }
+
+    // Determine max velocity based on speed mode - use much lower values to start with
+    int32_t max_rpm = speed_mode ? MAX_VELOCITY - 50 : MAX_VELOCITY / 2; // Logic is inversed will FIX
+
+    // Map the joystick value to the velocity range (in RPM)
+    int32_t rpm = 0;
+
+    if (joystick_value > deadzone_max)
+    {
+        // Forward movement (joystick above center + deadzone)
+        // Map from (deadzone_max to JOYSTICK_MAX) to (0 to max_rpm)
+        rpm = (int32_t)((joystick_value - deadzone_max) * max_rpm / (JOYSTICK_MAX - deadzone_max));
+    }
+    else if (joystick_value < deadzone_min)
+    {
+        // Backward movement (joystick below center - deadzone)
+        // Map from (JOYSTICK_MIN to deadzone_min) to (-max_rpm to 0)
+        rpm = -(int32_t)((deadzone_min - joystick_value) * max_rpm / (deadzone_min - JOYSTICK_MIN));
+    }
+
+    return rpm;
+}
+
 void *cyclic_task(void *arg)
 {
-    (void)arg; // Suppress unused parameter warning
+    (void)arg;
 
     rxpdo_t *rxpdo;
     txpdo_t *txpdo;
-    int joystick_value = 0;
     int wkc;
     int timeout_counter = 0;
 
-    bool continuous_scanning = false;
     int scan_interval_counter = 0;
     const int SCAN_INTERVAL = 500;
 
@@ -873,8 +819,8 @@ void *cyclic_task(void *arg)
 
     // Initialize controlword, opmode, etc.
     rxpdo->controlword = 0;
-    rxpdo->op_mode = 0; 
-    //rxpdo->target_velocity = 0;
+    rxpdo->op_mode = 0;
+    // rxpdo->target_velocity = 0;
     rxpdo->target_torque = 0;
     rxpdo->torque_offset = 0;
 
@@ -914,7 +860,7 @@ void *cyclic_task(void *arg)
     {
         printf("Drive is starting in FAULT state, entering fault recovery sequence\n");
         init_phase = PHASE_FAULT_RECOVERY;
-        read_error_details(true);
+        read_error_details();
         in_fault_state = true;
     }
 
@@ -1013,7 +959,6 @@ void *cyclic_task(void *arg)
                         // Reconnection successful - reset everything
                         printf("Device found and reconnected successfully!\n");
                         connection_lost = false;
-                        continuous_scanning = false;
                         comm_errors = 0;
                     }
 
@@ -1171,7 +1116,7 @@ void *cyclic_task(void *arg)
                 {
                     // First time entering fault state - print detailed info
                     printf("Drive in FAULT state, entering fault recovery sequence\n");
-                    read_error_details(true);
+                    read_error_details();
                     in_fault_state = true;
                     init_phase = PHASE_FAULT_RECOVERY; // Switch to dedicated fault handling
                 }
@@ -1259,7 +1204,7 @@ void *cyclic_task(void *arg)
 
                 case PHASE_STABILIZATION:
 
-                    //rxpdo->target_velocity = 0; // Ensure zero velocity during stabilization
+                    // rxpdo->target_velocity = 0; // Ensure zero velocity during stabilization
 
                     stabilization_counter++;
                     if (stabilization_counter % 50 == 0)
@@ -1329,12 +1274,12 @@ void *cyclic_task(void *arg)
                 {
                     // First time entering fault state during operation - print detailed info
                     printf("FAULT detected during operation. Attempting reset...\n");
-                    read_error_details(true);
+                    read_error_details();
                     in_fault_state = true;
                     fault_counter = 1;
 
                     // Reset target velocity and prepare for reset
-                    //rxpdo->target_velocity = 0;
+                    // rxpdo->target_velocity = 0;
                 }
                 else
                 {
@@ -1365,25 +1310,64 @@ void *cyclic_task(void *arg)
             }
             else
             {
-               
+
                 in_fault_state = false;
                 rxpdo->controlword = CW_ENABLE;
 
                 if (txpdo->statusword & SW_OPERATION_ENABLED_BIT)
                 {
-                    
-                    static int32_t current_velocity = 0;
-                    static int log_interval = 0;
-                    //rxpdo->target_velocity = (int32_t)(50 * (262144.0));
-                    rxpdo->target_velocity = (int32_t)(50);
+                    // Get joystick values and button states
+                    int y_axis = get_can_y_axis();    // 4-252, 128 is center
+                    int speed_mode = get_can_speed(); // 0 = normal, 1 = reduced speed
+                    int estop = get_can_estop();      // 0 = normal, 1 = emergency stop
+                    int enable = get_can_enable();    // 0 = disabled, 1 = enabled
 
+                    // Handle e-stop: If e-stop is activated, set velocity to 0
+                    if (!estop)
+                    {
+                        rxpdo->target_velocity = 0;
+                    }
+
+                    // Handle enable: Only move if enabled
+                    else if (enable)
+                    {
+
+                        // Map joystick Y-axis to velocity - START WITH VERY SMALL VALUES!
+                        int32_t target_velocity = map_joystick_to_velocity(y_axis, speed_mode);
+
+                        // Apply a very conservative ramp to limit acceleration/deceleration
+                        static int32_t current_velocity = 0;
+                        if (target_velocity > current_velocity)
+                        {
+                            current_velocity += 1; // Limit to 1 RPM increase per cycle
+                        }
+                        else if (target_velocity < current_velocity)
+                        {
+                            current_velocity -= 1; // Limit to 1 RPM decrease per cycle
+                        }
+
+                        // Set the final velocity
+                        rxpdo->target_velocity = current_velocity;
+
+                    }
+                    else
+                    {
+                        // Disabled state - no movement
+                        rxpdo->target_velocity = 0;
+                    }
+
+                    // Log values at regular intervals
+                    static int log_interval = 0;
                     log_interval++;
-                    if (log_interval >= 250) { // Every second (at 250Hz)
-                        // Print raw status values without averaging
+                    if (log_interval >= 250)
+                    { // Every second (at 250Hz)
+                        // Print status values
+                        printf("Joystick: Y=%d | Speed Mode=%d | E-Stop=%d | Enable=%d\n",
+                               y_axis, speed_mode, estop, enable);
+
                         printf("CSV: Target=%d | Actual=%d\n",
-                            rxpdo->target_velocity,
-                               txpdo->velocity_actual);
-                        
+                               rxpdo->target_velocity, txpdo->velocity_actual);
+
                         decode_statusword(txpdo->statusword);
                         // Reset log interval
                         log_interval = 0;
@@ -1395,14 +1379,13 @@ void *cyclic_task(void *arg)
                 status_counter++;
                 if (status_counter % 250 == 0)
                 {
-           
+
                     if (abs(rxpdo->target_velocity) > 2000 && abs(txpdo->velocity_actual) < 100)
                     {
                         // Only warn if we're sending a significant command but seeing very little response
                         printf("WARNING: Motor not responding to velocity commands\n");
-                        printf("  Target: %d (≈%.4f RPM), Actual: %d\n",
+                        printf("  Target: %d, Actual: %d\n",
                                rxpdo->target_velocity,
-                               (float)rxpdo->target_velocity / 262144.0f,
                                txpdo->velocity_actual);
                     }
                 }
@@ -1414,54 +1397,6 @@ void *cyclic_task(void *arg)
     }
 
     return NULL;
-}
-
-void decode_statusword(uint16_t statusword)
-{
-    // Basic State Machine bits
-    printf("Status 0x%04X - State Machine: ", statusword);
-    
-    // Decode the state machine bits (bits 0, 1, 2, 3, 5, 6)
-    uint8_t state_bits = statusword & 0x6F; // Mask for bits 0,1,2,3,5,6
-    
-    // State machine according to CiA 402
-    if (state_bits == 0x00) printf("Not ready to switch on\n");
-    else if (state_bits == 0x40) printf("Switch on disabled\n");
-    else if (state_bits == 0x21) printf("Ready to switch on\n");
-    else if (state_bits == 0x23) printf("Switched on\n");
-    else if (state_bits == 0x27) printf("Operation enabled\n");
-    else if (state_bits == 0x07) printf("Quick stop active\n");
-    else if (state_bits == 0x0F) printf("Fault reaction active\n");
-    else if (state_bits == 0x08) printf("Fault\n");
-    else printf("Unknown state (0x%02X)\n", state_bits);
- 
-    // Row 1: Bits 0-3
-    printf("  0:%-20s  1:%-20s  2:%-20s  3:%-20s\n",
-           (statusword & (1 << 0)) ? "Ready to switch on" : "Not ready",
-           (statusword & (1 << 1)) ? "Switched on" : "Switched off",
-           (statusword & (1 << 2)) ? "Operation enabled" : "Op disabled",
-           (statusword & (1 << 3)) ? "Fault present" : "No fault");
-    
-    // Row 2: Bits 4-7
-    printf("  4:%-20s  5:%-20s  6:%-20s  7:%-20s\n",
-           (statusword & (1 << 4)) ? "Voltage enabled" : "Voltage disabled",
-           (statusword & (1 << 5)) ? "Quick stop disabled" : "Quick stop enabled",
-           (statusword & (1 << 6)) ? "Switch on disabled" : "Switch on enabled",
-           (statusword & (1 << 7)) ? "Warning present" : "No warning");
-    
-    // Row 3: Bits 8-11
-    printf("  8:%-20s  9:%-20s 10:%-20s 11:%-20s\n",
-           (statusword & (1 << 8)) ? "Manuf bit set" : "Manuf bit clear",
-           (statusword & (1 << 9)) ? "Remote operation" : "No remote",
-           (statusword & (1 << 10)) ? "Target reached" : "Target not reached",
-           (statusword & (1 << 11)) ? "Internal limit" : "No limit");
-    
-    // Row 4: Bits 12-15
-    printf(" 12:%-20s 13:%-20s 14:%-20s 15:%-20s\n",
-           (statusword & (1 << 12)) ? "Following command" : "Vel differs",
-           (statusword & (1 << 13)) ? "Following ramp" : "Not following ramp",
-           (statusword & (1 << 14)) ? "Manuf bit 14 set" : "Manuf bit 14 clear",
-           (statusword & (1 << 15)) ? "Manuf bit 15 set" : "Manuf bit 15 clear");
 }
 
 /**
@@ -1490,6 +1425,23 @@ int main(int argc, char *argv[])
     // Enable terminal raw mode for keyboard input
     enable_raw_mode();
 
+    if (!initialize_python_can())
+    {
+        printf("Failed to initialize Python CAN interface\n");
+        disable_raw_mode();
+        return 1;
+    }
+
+    // Initialize CAN monitor
+    if (!init_can_monitor())
+    {
+        printf("Failed to initialize CAN monitor\n");
+        disable_raw_mode();
+        return 1;
+    }
+
+    printf("CAN monitor initialized\n");
+
     // Setup EtherCAT
     if (!setup_ethercat())
     {
@@ -1511,9 +1463,16 @@ int main(int argc, char *argv[])
     while (run)
     {
         sleep(1); // Check every second instead of tight loop
+
+        static int status_counter = 0;
+        if (status_counter++ % 5 == 0)
+        {
+            print_can_status();
+        }
     }
 
     // Proper cleanup (will also restore terminal settings)
+    stop_can_monitor();
     cleanup_and_exit();
 
     return 0;
