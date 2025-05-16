@@ -6,7 +6,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include "can_monitor.h"
-#include "can_wrapper.h"
+#include "socketcan.h"  // Changed from "can_wrapper.h"
 
 CANVariables can_vars;
 
@@ -50,10 +50,8 @@ void *can_monitor_thread(void *arg)
 
     while (keep_running)
     {
-        // Always acquire and release in the same thread
-        acquire_gil();
-
         // Fetch all data in one batch with proper error handling
+        // No need for GIL acquisition/release since we're no longer using Python
         temp_enable = get_enable_button();
         temp_x = get_x_axis();
         temp_y = get_y_axis();
@@ -61,12 +59,9 @@ void *can_monitor_thread(void *arg)
         temp_estop = get_estop_button();
         temp_speed = get_speed_button();
 
-        // Important: Release GIL before checking results or doing any other operations
-        release_gil();
-
         valid_reading = 1;
 
-        // Verify readings only after releasing GIL
+        // Verify readings
         if (temp_enable != 0 && temp_enable != 1)
         {
             valid_reading = 0;
@@ -115,7 +110,6 @@ void *can_monitor_thread(void *arg)
 
 int init_can_monitor(void)
 {
-
     pthread_mutex_init(&can_vars.mutex, NULL);
 
     memset(&can_vars, 0, sizeof(CANVariables));
@@ -123,11 +117,18 @@ int init_can_monitor(void)
     clock_gettime(CLOCK_MONOTONIC, &can_vars.last_update);
     can_vars.monitoring_active = 0;
 
+    // Initialize SocketCAN
+    if (!initialize_can_bus("can0")) {
+        printf("Failed to initialize CAN bus\n");
+        return 0;
+    }
+
     keep_running = 1;
 
     if (pthread_create(&monitor_thread_id, NULL, can_monitor_thread, NULL) != 0)
     {
         printf("Failed to create CAN monitor thread\n");
+        shutdown_can_bus();
         return 0;
     }
 
@@ -152,8 +153,12 @@ void stop_can_monitor(void)
 
     pthread_mutex_destroy(&can_vars.mutex);
     can_vars.monitoring_active = 0;
+    
+    // Shutdown CAN bus
+    shutdown_can_bus();
 }
 
+// The rest of the functions remain unchanged
 int get_can_enable(void)
 {
     int result;
@@ -162,7 +167,6 @@ int get_can_enable(void)
 
     if (is_data_stale())
     {
-
         result = 1;
 
         static int stale_warnings = 0;

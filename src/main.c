@@ -42,14 +42,6 @@ int main(int argc, char *argv[])
     // Enable terminal raw mode for keyboard input
     enable_raw_mode();
 
-    // Initialize Python CAN interface
-    if (!initialize_python_can())
-    {
-        printf("Failed to initialize Python CAN interface\n");
-        disable_raw_mode();
-        return 1;
-    }
-
     // Initialize CAN monitor
     if (!init_can_monitor())
     {
