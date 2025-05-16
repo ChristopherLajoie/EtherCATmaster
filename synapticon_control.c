@@ -78,10 +78,6 @@ int slave_index = 1;
 char IOmap[4096];
 pthread_t thread1;
 
-uint32_t si_unit_velocity = 0; // 0x60A9
-uint32_t feed_numerator = 0;   // 0x6092:1
-uint32_t feed_denominator = 1; // 0x6092:2
-
 // Terminal settings for keyboard input
 struct termios orig_termios;
 
@@ -94,7 +90,6 @@ void *cyclic_task(void *arg);
 void read_drive_parameters();
 void cleanup_and_exit();
 bool read_error_details();
-bool perform_fault_reset(rxpdo_t *rxpdo, txpdo_t *txpdo);
 void enable_raw_mode();
 int32_t map_joystick_to_velocity(int joystick_value, int speed_mode);
 void disable_raw_mode();
@@ -145,70 +140,6 @@ char readch()
     return ch;
 }
 
-bool perform_fault_reset(rxpdo_t *rxpdo, txpdo_t *txpdo)
-{
-    static int reset_sequence_state = 0;
-    static int reset_delay_counter = 0;
-    bool reset_complete = false;
-
-    // According to CiA 402 standard, fault reset is a bit transition (edge triggered)
-    // We need a proper sequence: clear command → set reset bit → wait → clear reset bit
-    switch (reset_sequence_state)
-    {
-    case 0:                          // First, send controlword with reset bit cleared
-        rxpdo->controlword = 0x0000; // All bits cleared
-        reset_sequence_state = 1;
-        reset_delay_counter = 0;
-        break;
-
-    case 1: // Wait a bit for the first command to take effect
-        reset_delay_counter++;
-        if (reset_delay_counter >= 5)
-        { // Wait about 20ms (5 cycles at 4ms)
-            reset_sequence_state = 2;
-        }
-        break;
-
-    case 2:                                  // Now send the fault reset command
-        rxpdo->controlword = CW_FAULT_RESET; // Set only the fault reset bit (0x0080)
-        reset_sequence_state = 3;
-        reset_delay_counter = 0;
-        break;
-
-    case 3: // Hold the reset command for a while
-        reset_delay_counter++;
-        if (reset_delay_counter >= 10)
-        { // Hold for about 40ms (10 cycles)
-            reset_sequence_state = 4;
-        }
-        break;
-
-    case 4:                          // Clear the reset bit
-        rxpdo->controlword = 0x0000; // Clear all bits again
-        reset_sequence_state = 5;
-        reset_delay_counter = 0;
-        break;
-
-    case 5: // Wait and check if fault has cleared
-        reset_delay_counter++;
-        if (reset_delay_counter >= 5)
-        { // Wait about 20ms
-            // Check if fault is still present
-            if (!(txpdo->statusword & SW_FAULT_BIT))
-            {
-                // Fault cleared successfully
-                reset_complete = true;
-            }
-
-            // Reset the sequence to start again if needed
-            reset_sequence_state = 0;
-        }
-        break;
-    }
-
-    return reset_complete;
-}
-
 void signal_handler(int sig)
 {
     printf("\nSignal %d received, stopping program...\n", sig);
@@ -230,80 +161,6 @@ void cleanup_and_exit()
     printf("End program\n");
 }
 
-// Function to reinitialize EtherCAT connection
-bool reinitialize_ethercat()
-{
-    printf("\n===== ATTEMPTING TO RECONNECT ETHERCAT =====\n");
-
-    // Close existing connection first
-    printf("Closing existing EtherCAT connection\n");
-    ec_close();
-
-    // Longer delay to ensure proper network reset and give time for device to power up
-    printf("Waiting for EtherCAT devices to come online...\n");
-    usleep(2000000); // 2 seconds
-
-    printf("Reinitializing EtherCAT on %s\n", ifname);
-
-    // Reinitialize everything from scratch
-    if (ec_init(ifname))
-    {
-        printf("ec_init on %s succeeded.\n", ifname);
-
-        if (ec_config_init(FALSE) > 0)
-        {
-            printf("%d slaves found and reconfigured.\n", ec_slavecount);
-
-            // Configure distributed clock
-            printf("Reconfiguring DC...\n");
-            ec_configdc();
-
-            // Remap process data
-            printf("Remapping process data...\n");
-            ec_config_map(&IOmap);
-
-            // Set state to SAFE_OP
-            ec_slave[0].state = EC_STATE_SAFE_OP;
-            ec_writestate(0);
-            ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
-
-            // Set state to OPERATIONAL
-            printf("Setting state to OPERATIONAL...\n");
-            ec_slave[0].state = EC_STATE_OPERATIONAL;
-            ec_writestate(0);
-
-            // Wait for all slaves to reach OP state
-            int chk = 40;
-            do
-            {
-                ec_statecheck(0, EC_STATE_OPERATIONAL, 50000);
-            } while (chk-- && (ec_slave[0].state != EC_STATE_OPERATIONAL));
-
-            if (ec_slave[0].state == EC_STATE_OPERATIONAL)
-            {
-                printf("Reconnection successful - operational state reached for all slaves.\n");
-                printf("===== ETHERCAT RECONNECTION COMPLETE =====\n\n");
-                return true;
-            }
-            else
-            {
-                printf("Reconnection failed - not all slaves reached operational state.\n");
-            }
-        }
-        else
-        {
-            printf("Reconnection failed - no slaves found!\n");
-        }
-    }
-    else
-    {
-        printf("Reconnection failed - could not initialize %s\n", ifname);
-    }
-
-    printf("===== ETHERCAT RECONNECTION FAILED =====\n\n");
-    return false;
-}
-
 bool setup_ethercat()
 {
     int i, chk;
@@ -319,15 +176,6 @@ bool setup_ethercat()
         if (ec_config_init(FALSE) > 0)
         {
             printf("%d slaves found and configured.\n", ec_slavecount);
-
-            // Read software version
-            char sw_version[32] = {0};
-            size = sizeof(sw_version) - 1;
-            int ret = ec_SDOread(slave_index, 0x100A, 0, FALSE, &size, sw_version, EC_TIMEOUTRXM);
-            if (ret > 0)
-            {
-                printf("Software version: %s\n", sw_version);
-            }
 
             // Try to read error code if any
             u16val = 0;
@@ -830,9 +678,6 @@ void *cyclic_task(void *arg)
     struct timespec ts;
     struct timespec tleft;
 
-    // Stabilization counter
-    int stabilization_counter = 0;
-
     // Counter for fault messages - to reduce output clutter
     int fault_counter = 0;
     int fault_message_modulo = 100; // Only print message every 100 faults
@@ -1042,7 +887,7 @@ void *cyclic_task(void *arg)
                 }
 
                 // Try the enhanced fault reset sequence
-                bool reset_success = perform_fault_reset(rxpdo, txpdo);
+                bool reset_success = FALSE;
 
                 if (reset_success)
                 {
@@ -1198,28 +1043,14 @@ void *cyclic_task(void *arg)
                     { // Operation enabled
                         printf("Operation enabled successfully! Drive is now fully operational\n");
                         init_phase = PHASE_STABILIZATION;
-                        stabilization_counter = 0;
                     }
                     break;
 
                 case PHASE_STABILIZATION:
 
-                    // rxpdo->target_velocity = 0; // Ensure zero velocity during stabilization
-
-                    stabilization_counter++;
-                    if (stabilization_counter % 50 == 0)
-                    {
-                        printf("Stabilizing... %d of 500 cycles\n", stabilization_counter);
-                    }
-
-                    if (stabilization_counter >= 500)
-                    { // About 2 seconds at 250Hz
-                        printf("Stabilization complete, transitioning to operational state\n");
-                        init_phase = PHASE_OPERATIONAL;
-                        drive_initialized = 1;
-                    }
-                    break;
-
+                    init_phase = PHASE_OPERATIONAL;
+                    drive_initialized = 1;
+                   
                 case PHASE_OPERATIONAL:
                     // This state shouldn't be reached here, but just in case
                     drive_initialized = 1;
@@ -1291,7 +1122,7 @@ void *cyclic_task(void *arg)
                     }
                 }
 
-                bool reset_success = perform_fault_reset(rxpdo, txpdo);
+                bool reset_success = FALSE;
 
                 if (reset_success)
                 {
@@ -1399,9 +1230,6 @@ void *cyclic_task(void *arg)
     return NULL;
 }
 
-/**
- * Main function
- */
 int main(int argc, char *argv[])
 {
     printf("SOEM (Simple Open EtherCAT Master)\n");
