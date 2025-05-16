@@ -286,7 +286,7 @@ int32_t map_joystick_to_velocity(int joystick_value, int speed_mode)
     }
 
     // Determine max velocity based on speed mode
-    int32_t max_rpm = speed_mode ? (MAX_VELOCITY - 50) : (MAX_VELOCITY / 2);
+    int32_t max_rpm = speed_mode ? (MAX_VELOCITY * 0.9) : (MAX_VELOCITY / 2);
 
     // Map the joystick value to the velocity range (in RPM)
     int32_t rpm = 0;
