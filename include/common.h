@@ -52,6 +52,7 @@
 #define SW_QUICK_STOP_BIT (0x1 << 5)
 #define SW_SWITCH_ON_DISABLED_BIT (0x1 << 6)
 #define SW_TARGET_REACHED_BIT (0x1 << 10)
+#define SW_NO_COMMUNICATION 0x0000 
 
 // RxPDO (master to slave)
 #pragma pack(push, 1) // no implicit padding
