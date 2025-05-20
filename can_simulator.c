@@ -201,7 +201,6 @@
      (void)arg; // Unused
      
      sim_enable_raw_mode();
-     printf("CAN Simulator active. Press 'P' for controls, 'Q' to exit.\n");
      
      // Initialize last press time
      gettimeofday(&can_sim.last_x_press, NULL);

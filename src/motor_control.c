@@ -2,7 +2,6 @@
 #include "cia402_state.h"
 #include <time.h>
 
-// Simplified state machine with minimal error handling
 void *motor_control_cyclic_task(void *arg)
 {
     (void)arg; // Unused parameter
@@ -17,13 +16,16 @@ void *motor_control_cyclic_task(void *arg)
     // State for keeping track of initialization
     enum
     {
+        STATE_BOOT,         // New state for initial boot
         STATE_INIT,
         STATE_OPERATIONAL
-    } control_state = STATE_INIT;
+    } control_state = STATE_BOOT;
 
     // Initialization counters
     int init_step = 0;
     int init_wait = 0;
+    int fault_reset_attempts = 0;  // Track fault reset attempts
+    const int MAX_FAULT_RESET_ATTEMPTS = 5;
 
     int32_t current_velocity = 0;
     int32_t target_velocity = 0;
@@ -62,6 +64,54 @@ void *motor_control_cyclic_task(void *arg)
             // Process based on state
             switch (control_state)
             {
+            case STATE_BOOT:
+                printf("Initial statusword: 0x%04X [", txpdo->statusword);
+                if (txpdo->statusword & SW_READY_TO_SWITCH_ON_BIT) printf("READY");
+                if (txpdo->statusword & SW_SWITCHED_ON_BIT) printf("SWITCHED_ON");
+                if (txpdo->statusword & SW_OPERATION_ENABLED_BIT) printf("ENABLED");
+                if (txpdo->statusword & SW_FAULT_BIT) printf("FAULT");
+                if (txpdo->statusword & SW_SWITCH_ON_DISABLED_BIT) printf("DISABLED");
+                printf("]\n");
+                
+                // Check for faults first
+                if (txpdo->statusword & SW_FAULT_BIT)
+                {
+                    if (fault_reset_attempts < MAX_FAULT_RESET_ATTEMPTS)
+                    {
+                        printf("Fault detected during boot, resetting (attempt %d/%d)\n", 
+                               fault_reset_attempts + 1, MAX_FAULT_RESET_ATTEMPTS);
+                        rxpdo->controlword = CW_FAULT_RESET;
+                        fault_reset_attempts++;
+                        // Wait for 10 cycles after sending fault reset
+                        if (++init_wait > 10)
+                        {
+                            init_wait = 0;
+                        }
+                    }
+                    else
+                    {
+                        printf("Failed to clear fault after %d attempts\n", fault_reset_attempts);
+                        // Try one more strategy - complete power cycle simulation
+                        rxpdo->controlword = 0;  // All bits off
+                        if (++init_wait > 100)
+                        {
+                            // Reset attempts counter and move to init state
+                            fault_reset_attempts = 0;
+                            init_wait = 0;
+                            control_state = STATE_INIT;
+                        }
+                    }
+                }
+                else
+                {
+                    // No fault, proceed to initialization
+                    printf("No faults detected, proceeding to initialization\n");
+                    control_state = STATE_INIT;
+                    init_step = 0;
+                    init_wait = 0;
+                }
+                break;
+
             case STATE_INIT:
                 // Simple initialization sequence
                 switch (init_step)
@@ -79,9 +129,19 @@ void *motor_control_cyclic_task(void *arg)
                 case 1: // Shutdown state
                     rxpdo->controlword = CW_SHUTDOWN;
                     if ((txpdo->statusword & 0x006F) == 0x0021)
-                    { // Ready to switch on
+                    { 
                         init_step = 2;
                         printf("Drive is ready to switch on\n");
+                    }
+                    else if (++init_wait > 200)
+                    {
+                        // If stuck in this state, try more aggressive reset
+                        rxpdo->controlword = CW_DISABLEVOLTAGE;
+                        if (init_wait > 250)
+                        {
+                            // Reset and retry shutdown
+                            init_wait = 0;
+                        }
                     }
                     break;
 
@@ -122,6 +182,15 @@ void *motor_control_cyclic_task(void *arg)
                 // Maintain enabled state
                 uint16_t controlword = CW_ENABLE;
 
+                if (!(txpdo->statusword & SW_OPERATION_ENABLED_BIT)) {
+                    printf("Warning: Operation disabled during operation (0x%04X), reinitializing\n", txpdo->statusword);
+                    cia402_decode_statusword(txpdo->statusword); // Print detailed status
+                    control_state = STATE_INIT;
+                    init_step = 0;
+                    init_wait = 0;
+                    return;
+                }
+                
                 // Only process commands if operation is enabled
                 if (txpdo->statusword & SW_OPERATION_ENABLED_BIT)
                 {

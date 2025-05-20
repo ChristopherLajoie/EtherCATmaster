@@ -22,7 +22,7 @@ void signal_handler(int sig)
 int main(void)
 {
     printf("SOEM (Simple Open EtherCAT Master)\n");
-    printf("Synapticon Motor Control - Simplified Version\n");
+    printf("Synapticon Motor Control\n");
     
     // Register signal handler
     struct sigaction sa;
@@ -45,13 +45,41 @@ int main(void)
     
     printf("CAN monitor initialized\n");
     
-    // Initialize EtherCAT and get process data pointers
-    if (!ethercat_init()) {
+    bool ethercat_initialized = false;
+    int retry_count = 0;
+    const int MAX_RETRIES = 20; 
+    const int RETRY_DELAY_SEC = 3;
+    
+    printf("Attempting to initialize EtherCAT on %s...\n", g_motor_control.ifname);
+    
+    while (!ethercat_initialized && g_motor_control.run && retry_count < MAX_RETRIES) {
+        if (retry_count > 0) {
+            printf("Retry attempt %d/%d...\n", retry_count + 1, MAX_RETRIES);
+        }
+        
+        ethercat_initialized = ethercat_init();
+        
+        if (!ethercat_initialized) {
+            retry_count++;
+            
+            if (retry_count >= MAX_RETRIES) {
+                printf("Maximum retries (%d) exceeded. Could not find any EtherCAT slaves.\n", MAX_RETRIES);
+                break;
+            }
+            
+            printf("No EtherCAT slaves found. Will retry in %d seconds (Press Ctrl+C to abort)\n", 
+                   RETRY_DELAY_SEC);
+        }
+    }
+    
+    if (!ethercat_initialized) {
         printf("Failed to setup EtherCAT. Exiting.\n");
         stop_can_monitor();
         disable_raw_mode();
         return 1;
     }
+    
+    printf("EtherCAT initialized successfully\n");
     
     // Default to PVM mode
     g_motor_control.rxpdo->op_mode = OP_MODE_PVM;
