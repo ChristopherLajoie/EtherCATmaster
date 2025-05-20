@@ -1,3 +1,5 @@
+# Makefile for Motor Control Application
+
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -g
 LDFLAGS = -lm -lrt -lpthread
@@ -39,8 +41,9 @@ OSHW_OBJ = $(BUILD_OSHW_DIR)/nicdrv.o \
 OSAL_OBJ = $(BUILD_OSAL_DIR)/osal.o
 
 # CAN interface object files
-CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o \
-          $(BUILD_SRC_DIR)/socketcan.o
+# Choose either real CAN or simulated CAN by commenting out one line
+#CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o $(BUILD_SRC_DIR)/socketcan.o
+CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o $(BUILD_ROOT_DIR)/can_simulator.o
 
 # Application object files
 APP_OBJ = $(BUILD_SRC_DIR)/main.o \
@@ -84,6 +87,10 @@ $(BUILD_OSAL_DIR)/%.o: $(OSAL_LINUX_DIR)/%.c
 $(BUILD_SRC_DIR)/socketcan.o: src/socketcan.c include/socketcan.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+# Compile CAN simulator
+$(BUILD_ROOT_DIR)/can_simulator.o: can_simulator.c include/socketcan.h
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
 # Compile CAN monitor (in root directory)
 $(BUILD_ROOT_DIR)/can_monitor.o: can_monitor.c include/can_monitor.h include/socketcan.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
@@ -100,4 +107,11 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(TARGET)
 
-.PHONY: all clean soem create_build_dirs
+# Targets for explicitly choosing real or simulated CAN
+real: CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o $(BUILD_SRC_DIR)/socketcan.o
+real: clean all
+
+sim: CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o $(BUILD_ROOT_DIR)/can_simulator.o 
+sim: clean all
+
+.PHONY: all clean soem create_build_dirs real sim
