@@ -136,7 +136,7 @@
      printf("\n=== KEYBOARD CONTROLS ===\n");
      printf("1-5: Toggle buttons   6: Center joystick\n");
      printf("Arrow Keys: Control Joystick (auto-centers after release)\n");
-     printf("P: Show this status   Q: Quit\n");
+     printf("P: Show this status\n");
      
      pthread_mutex_unlock(&can_sim.mutex);
  }
@@ -282,12 +282,6 @@
                      pthread_mutex_unlock(&can_sim.mutex);
                      print_simulator_status();
                      pthread_mutex_lock(&can_sim.mutex);
-                     break;
-                     
-                 case 'q': // Quit
-                 case 'Q':
-                     printf("Exiting simulator...\n");
-                     keep_running = 0;
                      break;
              }
              
