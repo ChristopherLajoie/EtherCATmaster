@@ -1,5 +1,4 @@
-#include "motor_control.h"
-#include "cia402_state.h"
+#include "motor_driver.h"
 #include <time.h>
 
 void init_motor_control_state(motor_control_state_t *state)
@@ -91,6 +90,49 @@ bool handle_fault_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state
     // Clear the flag if no fault is present
     state->fault_messages_exhausted = false;
     return false;
+}
+
+void cia402_decode_statusword(uint16_t statusword)
+{
+    // Basic State Machine bits
+    printf("Status 0x%04X - State Machine: ", statusword);
+
+    // Decode the state machine bits (bits 0, 1, 2, 3, 5, 6)
+    uint8_t state_bits = statusword & 0x6F; // Mask for bits 0,1,2,3,5,6
+
+    // State machine according to CiA 402
+    if (state_bits == 0x00)
+        printf("Not ready to switch on\n");
+    else if (state_bits == 0x40)
+        printf("Switch on disabled\n");
+    else if (state_bits == 0x21)
+        printf("Ready to switch on\n");
+    else if (state_bits == 0x23)
+        printf("Switched on\n");
+    else if (state_bits == 0x27)
+        printf("Operation enabled\n");
+    else if (state_bits == 0x07)
+        printf("Quick stop active\n");
+    else if (state_bits == 0x0F)
+        printf("Fault reaction active\n");
+    else if (state_bits == 0x08)
+        printf("Fault\n");
+    else
+        printf("Unknown state (0x%02X)\n", state_bits);
+
+    // Row 1: Bits 0-3
+    printf("  0:%-20s  1:%-20s  2:%-20s  3:%-20s\n",
+           (statusword & (1 << 0)) ? "Ready to switch on" : "Not ready",
+           (statusword & (1 << 1)) ? "Switched on" : "Switched off",
+           (statusword & (1 << 2)) ? "Operation enabled" : "Op disabled",
+           (statusword & (1 << 3)) ? "Fault present" : "No fault");
+
+    // Row 2: Bits 4-7
+    printf("  4:%-20s  5:%-20s  6:%-20s  7:%-20s\n",
+           (statusword & (1 << 4)) ? "Voltage enabled" : "Voltage disabled",
+           (statusword & (1 << 5)) ? "Quick stop disabled" : "Quick stop enabled",
+           (statusword & (1 << 6)) ? "Switch on disabled" : "Switch on enabled",
+           (statusword & (1 << 7)) ? "Warning present" : "No warning");
 }
 
 void *motor_control_cyclic_task(void *arg)

@@ -1,5 +1,5 @@
-#ifndef MOTOR_CONTROL_H
-#define MOTOR_CONTROL_H
+#ifndef MOTOR_DRIVER_H
+#define MOTOR_DRIVER_H
 
 #include "common.h"
 
@@ -34,4 +34,6 @@ bool handle_fault_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state
 bool transition_to_ready_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state_t *state);
 bool enable_operation(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state_t *state);
 
-#endif 
+void cia402_decode_statusword(uint16_t statusword);
+
+#endif

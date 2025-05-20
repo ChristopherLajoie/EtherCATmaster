@@ -21,7 +21,6 @@ BUILD_SOEM_DIR = $(BUILD_DIR)/SOEM/soem
 BUILD_OSHW_DIR = $(BUILD_DIR)/SOEM/oshw/linux
 BUILD_OSAL_DIR = $(BUILD_DIR)/SOEM/osal/linux
 BUILD_SRC_DIR = $(BUILD_DIR)/src
-BUILD_ROOT_DIR = $(BUILD_DIR)
 
 # SOEM object files
 SOEM_OBJ = $(BUILD_SOEM_DIR)/ethercatbase.o \
@@ -40,18 +39,14 @@ OSHW_OBJ = $(BUILD_OSHW_DIR)/nicdrv.o \
 # OSAL object files
 OSAL_OBJ = $(BUILD_OSAL_DIR)/osal.o
 
-# Default to simulator if no target specified
-CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o $(BUILD_ROOT_DIR)/can_simulator.o
-
 # Application object files
 APP_OBJ = $(BUILD_SRC_DIR)/main.o \
-          $(BUILD_SRC_DIR)/ethercat_driver.o \
-          $(BUILD_SRC_DIR)/cia402_state.o \
-          $(BUILD_SRC_DIR)/motor_control.o \
-          $(BUILD_SRC_DIR)/terminal_io.o
+          $(BUILD_SRC_DIR)/hardware_io.o \
+          $(BUILD_SRC_DIR)/motor_driver.o \
+          $(BUILD_SRC_DIR)/can_interface.o
 
 # All object files
-OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(CAN_OBJ) $(APP_OBJ)
+OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(APP_OBJ)
 
 # Target executable
 TARGET = motor_control
@@ -75,9 +70,8 @@ create_build_dirs:
 	@mkdir -p $(BUILD_OSHW_DIR)
 	@mkdir -p $(BUILD_OSAL_DIR)
 	@mkdir -p $(BUILD_SRC_DIR)
-	@mkdir -p $(BUILD_ROOT_DIR)
 
-# Rule to build all SOEM library files
+# Build SOEM library files
 soem: create_build_dirs $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ)
 
 # Compile SOEM
@@ -92,21 +86,6 @@ $(BUILD_OSHW_DIR)/%.o: $(OSHW_DIR)/%.c
 
 # Compile OSAL
 $(BUILD_OSAL_DIR)/%.o: $(OSAL_LINUX_DIR)/%.c
-	@echo "Compiling $<"
-	@$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-# Compile SocketCAN implementation (in src directory)
-$(BUILD_SRC_DIR)/socketcan.o: src/socketcan.c include/socketcan.h
-	@echo "Compiling $<"
-	@$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-# Compile CAN simulator
-$(BUILD_ROOT_DIR)/can_simulator.o: can_simulator.c include/socketcan.h
-	@echo "Compiling $<"
-	@$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-# Compile CAN monitor (in root directory)
-$(BUILD_ROOT_DIR)/can_monitor.o: can_monitor.c include/can_monitor.h include/socketcan.h
 	@echo "Compiling $<"
 	@$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
@@ -129,10 +108,7 @@ clean:
 real: 
 	@echo "Building with REAL CAN hardware..."
 	@$(MAKE) clean
-	@$(MAKE) _real
-
-_real: CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o $(BUILD_SRC_DIR)/socketcan.o
-_real: create_build_dirs $(TARGET)
+	@$(MAKE) CAN_MODE=REAL create_build_dirs $(TARGET)
 	@echo ""
 	@echo "=========================================================="
 	@echo "  Build complete! Using REAL CAN hardware."
@@ -142,14 +118,16 @@ _real: create_build_dirs $(TARGET)
 sim:
 	@echo "Building with SIMULATED CAN..."
 	@$(MAKE) clean
-	@$(MAKE) _sim
-
-_sim: CAN_OBJ = $(BUILD_ROOT_DIR)/can_monitor.o $(BUILD_ROOT_DIR)/can_simulator.o
-_sim: create_build_dirs $(TARGET)
+	@$(MAKE) CAN_MODE=SIMULATOR create_build_dirs $(TARGET)
 	@echo ""
 	@echo "====================================================="
 	@echo "  Build complete! Using SIMULATED CAN."
 	@echo "====================================================="
 	@echo ""
 
-.PHONY: all clean soem create_build_dirs real _real sim _sim
+# Define CAN mode for build
+ifneq ($(CAN_MODE),)
+    CFLAGS += -DCAN_MODE_$(CAN_MODE)
+endif
+
+.PHONY: all clean soem create_build_dirs real sim

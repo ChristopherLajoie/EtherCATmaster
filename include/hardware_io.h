@@ -1,7 +1,8 @@
-#ifndef TERMINAL_IO_H
-#define TERMINAL_IO_H
+#ifndef HARDWARE_IO_H
+#define HARDWARE_IO_H
 
 #include <termios.h>
+#include "common.h"
 
 // Setup terminal for raw input mode
 void enable_raw_mode(void);
@@ -15,4 +16,10 @@ int kbhit(void);
 // Read a character
 char readch(void);
 
-#endif // TERMINAL_IO_H
+// Initialize EtherCAT communication
+bool ethercat_init();
+
+// Read drive parameters
+void read_drive_parameters();
+
+#endif 
