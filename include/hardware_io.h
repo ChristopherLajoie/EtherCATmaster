@@ -4,24 +4,14 @@
 #include <termios.h>
 #include "common.h"
 
-// Setup terminal for raw input mode
 void enable_raw_mode(void);
-
-// Restore terminal to original settings
 void disable_raw_mode(void);
-
-// Check if a key was pressed
 int kbhit(void);
-
-// Read a character
 char readch(void);
-
-// Initialize EtherCAT communication
 bool ethercat_init();
-
-// Read drive parameters
-void read_drive_parameters();
-
 bool configure_pdo_mappings(int slave);
+void cia402_decode_statusword(uint16_t statusword);
+cia402_state_t get_cia402_state(uint16_t statusword);
+const char* get_cia402_state_string(cia402_state_t state);
 
-#endif 
+#endif
