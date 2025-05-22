@@ -17,7 +17,6 @@ bool ethercat_init()
     // Initialize SOEM, bind socket to ifname
     if (ec_init(g_motor_control.ifname))
     {
-        printf("ec_init on %s succeeded.\n", g_motor_control.ifname);
 
         // Find and auto-configure slaves
         if (ec_config_init(FALSE) > 0)
@@ -68,163 +67,7 @@ bool ethercat_init()
 
             printf("PRE_OP state reached successfully\n");
 
-            uint32_t rxpdo_mapping;
-            uint8_t rxpdo_count = 0;
-            uint32_t txpdo_mapping;
-            uint8_t txpdo_count = 0;
-            uint16_t pdo_index;
-            uint8_t num_pdos = 1;
-
-            uint8_t zero = 0;
-
-            // Disable RxPDO assignments
-            ret = ec_SDOwrite(slave, 0x1C12, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to disable RxPDO assignments: %d\n", ret);
-
-            // Disable TxPDO assignments
-            ret = ec_SDOwrite(slave, 0x1C13, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to disable TxPDO assignments: %d\n", ret);
-
-            // Disable RxPDO mapping to configure it
-            ret = ec_SDOwrite(slave, 0x1600, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to clear RxPDO mapping: %d\n", ret);
-
-            // 0x6040:0 Controlword (16 bits)
-            rxpdo_mapping = 0x60400010; // Index:Subindex:BitLength
-            ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Controlword: %d\n", ret);
-
-            // 0x6060:0 Modes of operation (8 bits)
-            rxpdo_mapping = 0x60600008;
-            ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Modes of operation: %d\n", ret);
-
-            // 0x6071:0 Target torque (16 bits)
-            rxpdo_mapping = 0x60710010;
-            ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Target torque: %d\n", ret);
-
-            // 0x607A:0 Target position (32 bits)
-            rxpdo_mapping = 0x607A0020;
-            ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Target position: %d\n", ret);
-
-            // 0x60FF:0 Target velocity (32 bits)
-            rxpdo_mapping = 0x60FF0020;
-            ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Target velocity: %d\n", ret);
-
-            // 0x60B2:0 Torque offset (16 bits)
-            rxpdo_mapping = 0x60B20010;
-            ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Torque offset: %d\n", ret);
-
-            // 0x2701:0 Tuning command (32 bits) - This appears to be a Synapticon-specific extension
-            rxpdo_mapping = 0x27010020;
-            ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Tuning command: %d\n", ret);
-
-            // Set the number of configured RxPDO entries
-            ret = ec_SDOwrite(slave, 0x1600, 0, FALSE, sizeof(rxpdo_count), &rxpdo_count, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set RxPDO count: %d\n", ret);
-
-            // Disable TxPDO mapping to configure it
-            ret = ec_SDOwrite(slave, 0x1A00, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to clear TxPDO mapping: %d\n", ret);
-
-            // 0x6041:0 Statusword (16 bits)
-            txpdo_mapping = 0x60410010;
-            ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Statusword: %d\n", ret);
-
-            // 0x6061:0 Modes of operation display (8 bits)
-            txpdo_mapping = 0x60610008;
-            ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Modes of operation display: %d\n", ret);
-
-            // 0x6064:0 Position actual value (32 bits)
-            txpdo_mapping = 0x60640020;
-            ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Position actual value: %d\n", ret);
-
-            // 0x606C:0 Velocity actual value (16 bits) - Note: Documentation shows 32 bits but your struct has 16 bits
-            txpdo_mapping = 0x606C0010; // Using 16-bit to match your txpdo_t struct
-            ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Velocity actual value: %d\n", ret);
-
-            // 0x6077:0 Torque actual value (16 bits)
-            txpdo_mapping = 0x60770010;
-            ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to map Torque actual value: %d\n", ret);
-
-            // Set the number of configured TxPDO entries
-            ret = ec_SDOwrite(slave, 0x1A00, 0, FALSE, sizeof(txpdo_count), &txpdo_count, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set TxPDO count: %d\n", ret);
-
-            // Assign RxPDO mapping
-            pdo_index = 0x1600; // Index of the first RxPDO mapping
-            ret = ec_SDOwrite(slave, 0x1C12, 0, FALSE, sizeof(num_pdos), &num_pdos, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set RxPDO assignment count: %d\n", ret);
-            // ret = ec_SDOwrite(slave, 0x1C12, 1, FALSE, sizeof(pdo_index), &pdo_index, EC_TIMEOUTRXM);
-            // if (ret <= 0) printf("Failed to assign RxPDO: %d\n", ret);
-
-            // Assign TxPDO mapping
-            pdo_index = 0x1A00; // Index of the first TxPDO mapping
-            ret = ec_SDOwrite(slave, 0x1C13, 0, FALSE, sizeof(num_pdos), &num_pdos, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set TxPDO assignment count: %d\n", ret);
-            // ret = ec_SDOwrite(slave, 0x1C13, 1, FALSE, sizeof(pdo_index), &pdo_index, EC_TIMEOUTRXM);
-            // if (ret <= 0) printf("Failed to assign TxPDO: %d\n", ret);
-
-            uint32_t profile_velocity = 0;
-            ret = ec_SDOwrite(slave, 0x6081, 0, FALSE, sizeof(profile_velocity), &profile_velocity, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set profile velocity: %d\n", ret);
-
-            uint32_t max_motor_speed = MAX_VELOCITY;
-            ret = ec_SDOwrite(slave, 0x6080, 0, FALSE, sizeof(max_motor_speed), &max_motor_speed, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set max motor speed: %d\n", ret);
-
-            uint32_t profile_acceleration = 3000; // Adjust as needed
-            ret = ec_SDOwrite(slave, 0x6083, 0, FALSE, sizeof(profile_acceleration), &profile_acceleration, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set profile acceleration: %d\n", ret);
-
-            uint32_t profile_deceleration = 3000; // Adjust as needed
-            ret = ec_SDOwrite(slave, 0x6084, 0, FALSE, sizeof(profile_deceleration), &profile_deceleration, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set profile deceleration: %d\n", ret);
-
-            uint32_t quick_stop_decel = 3000;
-            ret = ec_SDOwrite(slave, 0x6085, 0, FALSE, sizeof(quick_stop_decel), &quick_stop_decel, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set quick stop deceleration: %d\n", ret);
-
-            // Motion profile type (0 = Linear ramps)
-            int16_t motion_profile_type = 0;
-            ret = ec_SDOwrite(slave, 0x6086, 0, FALSE, sizeof(motion_profile_type), &motion_profile_type, EC_TIMEOUTRXM);
-            if (ret <= 0)
-                printf("Failed to set motion profile type: %d\n", ret);
+            configure_pdo_mappings(slave);
 
             // Configure distributed clock
             printf("Configuring DC...\n");
@@ -290,6 +133,169 @@ bool ethercat_init()
     }
 
     return false;
+}
+
+bool configure_pdo_mappings(int slave)
+{
+    int ret;
+    uint8_t rxpdo_count = 0;
+    uint8_t txpdo_count = 0;
+    uint32_t rxpdo_mapping;
+    uint32_t txpdo_mapping;
+    uint8_t zero = 0;
+    uint16_t pdo_index;
+    uint8_t num_pdos = 1;
+
+    // Disable RxPDO assignments
+    ret = ec_SDOwrite(slave, 0x1C12, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to disable RxPDO assignments: %d\n", ret);
+
+    // Disable TxPDO assignments
+    ret = ec_SDOwrite(slave, 0x1C13, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to disable TxPDO assignments: %d\n", ret);
+
+    // Disable RxPDO mapping to configure it
+    ret = ec_SDOwrite(slave, 0x1600, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to clear RxPDO mapping: %d\n", ret);
+
+    // 0x6040:0 Controlword (16 bits)
+    rxpdo_mapping = 0x60400010; // Index:Subindex:BitLength
+    ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Controlword: %d\n", ret);
+
+    // 0x6060:0 Modes of operation (8 bits)
+    rxpdo_mapping = 0x60600008;
+    ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Modes of operation: %d\n", ret);
+
+    // 0x6071:0 Target torque (16 bits)
+    rxpdo_mapping = 0x60710010;
+    ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Target torque: %d\n", ret);
+
+    // 0x607A:0 Target position (32 bits)
+    rxpdo_mapping = 0x607A0020;
+    ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Target position: %d\n", ret);
+
+    // 0x60FF:0 Target velocity (32 bits)
+    rxpdo_mapping = 0x60FF0020;
+    ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Target velocity: %d\n", ret);
+
+    // 0x60B2:0 Torque offset (16 bits)
+    rxpdo_mapping = 0x60B20010;
+    ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Torque offset: %d\n", ret);
+
+    // 0x2701:0 Tuning command (32 bits) - This appears to be a Synapticon-specific extension
+    rxpdo_mapping = 0x27010020;
+    ret = ec_SDOwrite(slave, 0x1600, ++rxpdo_count, FALSE, sizeof(rxpdo_mapping), &rxpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Tuning command: %d\n", ret);
+
+    // Set the number of configured RxPDO entries
+    ret = ec_SDOwrite(slave, 0x1600, 0, FALSE, sizeof(rxpdo_count), &rxpdo_count, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set RxPDO count: %d\n", ret);
+
+    // Disable TxPDO mapping to configure it
+    ret = ec_SDOwrite(slave, 0x1A00, 0, FALSE, sizeof(zero), &zero, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to clear TxPDO mapping: %d\n", ret);
+
+    // 0x6041:0 Statusword (16 bits)
+    txpdo_mapping = 0x60410010;
+    ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Statusword: %d\n", ret);
+
+    // 0x6061:0 Modes of operation display (8 bits)
+    txpdo_mapping = 0x60610008;
+    ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Modes of operation display: %d\n", ret);
+
+    // 0x6064:0 Position actual value (32 bits)
+    txpdo_mapping = 0x60640020;
+    ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Position actual value: %d\n", ret);
+
+    // 0x606C:0 Velocity actual value (16 bits) - Note: Documentation shows 32 bits but your struct has 16 bits
+    txpdo_mapping = 0x606C0010; // Using 16-bit to match your txpdo_t struct
+    ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Velocity actual value: %d\n", ret);
+
+    // 0x6077:0 Torque actual value (16 bits)
+    txpdo_mapping = 0x60770010;
+    ret = ec_SDOwrite(slave, 0x1A00, ++txpdo_count, FALSE, sizeof(txpdo_mapping), &txpdo_mapping, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to map Torque actual value: %d\n", ret);
+
+    // Set the number of configured TxPDO entries
+    ret = ec_SDOwrite(slave, 0x1A00, 0, FALSE, sizeof(txpdo_count), &txpdo_count, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set TxPDO count: %d\n", ret);
+
+    // Assign RxPDO mapping
+    pdo_index = 0x1600; // Index of the first RxPDO mapping
+    ret = ec_SDOwrite(slave, 0x1C12, 0, FALSE, sizeof(num_pdos), &num_pdos, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set RxPDO assignment count: %d\n", ret);
+    // ret = ec_SDOwrite(slave, 0x1C12, 1, FALSE, sizeof(pdo_index), &pdo_index, EC_TIMEOUTRXM);
+    // if (ret <= 0) printf("Failed to assign RxPDO: %d\n", ret);
+
+    // Assign TxPDO mapping
+    pdo_index = 0x1A00; // Index of the first TxPDO mapping
+    ret = ec_SDOwrite(slave, 0x1C13, 0, FALSE, sizeof(num_pdos), &num_pdos, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set TxPDO assignment count: %d\n", ret);
+    // ret = ec_SDOwrite(slave, 0x1C13, 1, FALSE, sizeof(pdo_index), &pdo_index, EC_TIMEOUTRXM);
+    // if (ret <= 0) printf("Failed to assign TxPDO: %d\n", ret);
+
+    uint32_t profile_velocity = 0;
+    ret = ec_SDOwrite(slave, 0x6081, 0, FALSE, sizeof(profile_velocity), &profile_velocity, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set profile velocity: %d\n", ret);
+
+    uint32_t max_motor_speed = MAX_VELOCITY;
+    ret = ec_SDOwrite(slave, 0x6080, 0, FALSE, sizeof(max_motor_speed), &max_motor_speed, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set max motor speed: %d\n", ret);
+
+    uint32_t profile_acceleration = 3000; // Adjust as needed
+    ret = ec_SDOwrite(slave, 0x6083, 0, FALSE, sizeof(profile_acceleration), &profile_acceleration, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set profile acceleration: %d\n", ret);
+
+    uint32_t profile_deceleration = 3000; // Adjust as needed
+    ret = ec_SDOwrite(slave, 0x6084, 0, FALSE, sizeof(profile_deceleration), &profile_deceleration, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set profile deceleration: %d\n", ret);
+
+    uint32_t quick_stop_decel = 3000;
+    ret = ec_SDOwrite(slave, 0x6085, 0, FALSE, sizeof(quick_stop_decel), &quick_stop_decel, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set quick stop deceleration: %d\n", ret);
+
+    // Motion profile type (0 = Linear ramps)
+    int16_t motion_profile_type = 0;
+    ret = ec_SDOwrite(slave, 0x6086, 0, FALSE, sizeof(motion_profile_type), &motion_profile_type, EC_TIMEOUTRXM);
+    if (ret <= 0)
+        printf("Failed to set motion profile type: %d\n", ret);
+    
+    return true;
 }
 
 void enable_raw_mode()

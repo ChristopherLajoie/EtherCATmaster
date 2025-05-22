@@ -16,14 +16,16 @@ typedef struct {
     motor_state_t state;     
     int init_step;           
     int init_wait;          
-    int fault_reset_attempts; 
-    bool connection_lost;    
+    int fault_reset_attempts;  
     int consecutive_comm_errors; 
     int32_t current_velocity; 
     int32_t target_velocity;  
     bool new_setpoint_active; 
     bool fault_messages_exhausted;
+    bool reconnect_in_progress;
+    struct timespec last_reconnect_attempt;
     int status_print_counter;
+    int reconnection_attempts; // Add this line
 } motor_control_state_t;
 
 void *motor_control_cyclic_task(void *arg);
@@ -33,7 +35,7 @@ void init_motor_control_state(motor_control_state_t *state);
 bool handle_fault_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state_t *state);
 bool transition_to_ready_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state_t *state);
 bool enable_operation(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state_t *state);
-
 void cia402_decode_statusword(uint16_t statusword);
+bool attempt_ethercat_reconnection(motor_control_state_t *state, rxpdo_t *rxpdo);
 
 #endif

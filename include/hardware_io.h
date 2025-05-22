@@ -22,4 +22,6 @@ bool ethercat_init();
 // Read drive parameters
 void read_drive_parameters();
 
+bool configure_pdo_mappings(int slave);
+
 #endif 

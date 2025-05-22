@@ -14,6 +14,7 @@
 
 #include "ethercat.h"
 #include "ethercatprint.h"
+#include "ethercatconfig.h"
 
 #define OP_MODE_PVM 3
 #define OP_MODE_CSV 9
