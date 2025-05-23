@@ -10,6 +10,7 @@
 #include "hardware_io.h"
 #include "can_interface.h"
 #include "motor_driver.h"
+#include "config.h"
 
 /* Configuration constants */
 #define MAX_ETHERCAT_RETRIES 20
@@ -74,13 +75,10 @@ static bool initialize_ethercat(void)
 {
     int retry_count = 0;
 
-    printf("Attempting to initialize EtherCAT on %s...\n", g_motor_control.ifname);
-
     while (g_motor_control.run && retry_count < MAX_ETHERCAT_RETRIES)
     {
         if (ethercat_init())
         {
-            printf("EtherCAT initialized successfully.\n");
             return true;
         }
 
@@ -116,8 +114,15 @@ static void cleanup_resources(void)
  */
 int main(void)
 {
-    printf("SOEM (Simple Open EtherCAT Master)\n");
-    printf("Synapticon Actilink-S Control\n");
+    if (!load_config("motor_config.ini"))
+    {
+        return EXIT_FAILURE;
+    }
+
+    /* Update motor control with config values */
+    g_motor_control.ifname = g_config.interface;
+    g_motor_control.cycletime = g_config.cycletime;
+    g_motor_control.slave_index = g_config.slave_index;
 
     if (setup_signal_handlers() != 0)
     {
@@ -138,8 +143,8 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    /* Configure operation mode */
-    g_motor_control.rxpdo->op_mode = OP_MODE_PVM;
+    /* Configure operation mode to PVM */
+    g_motor_control.rxpdo->op_mode = 3;
 
     if (pthread_create(&g_motor_control.cyclic_thread, NULL, motor_control_cyclic_task, NULL) != 0)
     {

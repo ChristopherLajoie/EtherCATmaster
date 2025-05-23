@@ -49,7 +49,6 @@ bool attempt_ethercat_reconnection()
 
         if (success)
         {
-            printf("EtherCAT reconnection successful!\n");
             ec_slave[g_motor_control.slave_index].islost = FALSE;
             return true;
         }
@@ -242,7 +241,6 @@ void* motor_control_cyclic_task(void* arg)
                         // After significant time, proceed anyway
                         if (zero_statusword_count > 500)
                         {
-                            printf("Proceeding to initialization despite no valid status\n");
                             g_motor_state.state = STATE_INIT;
                             g_motor_state.init_step = 0;
                             g_motor_state.init_wait = 0;
@@ -263,7 +261,6 @@ void* motor_control_cyclic_task(void* arg)
                             g_motor_state.fault_reset_attempts = 0;
                             g_motor_state.init_wait = 0;
                             g_motor_state.state = STATE_INIT;
-                            printf("Proceeding to initialization despite fault condition\n");
                         }
                     }
                     else if (txpdo->statusword & SW_SWITCH_ON_DISABLED_BIT)
@@ -331,7 +328,6 @@ void* motor_control_cyclic_task(void* arg)
                             if (state_bits == 0x0021 || state_bits == 0x0031)
                             {
                                 g_motor_state.init_step = 2;
-                                printf("Drive is ready to switch on\n");
                             }
                             else if (++g_motor_state.init_wait > 2000)  // Give much more time (8 seconds at 250Hz)
                             {
@@ -345,7 +341,6 @@ void* motor_control_cyclic_task(void* arg)
                             if ((txpdo->statusword & 0x006F) == 0x0023)
                             {  // Switched on
                                 g_motor_state.init_step = 3;
-                                printf("Drive is switched on\n");
                             }
                             break;
 
@@ -354,9 +349,6 @@ void* motor_control_cyclic_task(void* arg)
                             {
                                 g_motor_state.init_step = 4;
                                 g_motor_state.init_wait = 0;
-                                printf("Operation mode %d set (%s)\n",
-                                       rxpdo->op_mode,
-                                       rxpdo->op_mode == OP_MODE_CSV ? "Cyclic Synchronous Velocity" : "Profile Velocity Mode");
                             }
                             break;
 
@@ -364,7 +356,6 @@ void* motor_control_cyclic_task(void* arg)
                             rxpdo->controlword = CW_ENABLE;
                             if ((txpdo->statusword & 0x006F) == 0x0027)
                             {  // Operation enabled
-                                printf("Drive is now fully operational\n");
                                 g_motor_state.state = STATE_OPERATIONAL;
                                 g_motor_state.new_setpoint_active = false;
                             }
@@ -412,43 +403,24 @@ void* motor_control_cyclic_task(void* arg)
                             rxpdo->target_velocity = 0;
                         }
 
-                        // Mode-specific handling
-                        if (rxpdo->op_mode == OP_MODE_CSV)
+                        // Check if target velocity has changed
+                        if (g_motor_state.target_velocity != g_motor_state.current_velocity)
                         {
-                            // CSV Mode - Apply a very conservative ramp
-                            if (g_motor_state.target_velocity > g_motor_state.current_velocity)
-                            {
-                                g_motor_state.current_velocity += 5;
-                            }
-                            else if (g_motor_state.target_velocity < g_motor_state.current_velocity)
-                            {
-                                g_motor_state.current_velocity -= 5;
-                            }
+                            rxpdo->target_velocity = g_motor_state.target_velocity;
+                            g_motor_state.current_velocity = g_motor_state.target_velocity;
 
-                            // Set the final velocity
-                            rxpdo->target_velocity = g_motor_state.current_velocity;
+                            // Start new setpoint (bit 4)
+                            controlword |= CW_NEW_VELOCITY_SETPOINT;
+                            g_motor_state.new_setpoint_active = true;
                         }
-                        else if (rxpdo->op_mode == OP_MODE_PVM)
+                        else if (g_motor_state.new_setpoint_active)
                         {
-                            // Check if target velocity has changed
-                            if (g_motor_state.target_velocity != g_motor_state.current_velocity)
+                            // Check if target reached
+                            if (txpdo->statusword & SW_TARGET_REACHED_BIT)
                             {
-                                rxpdo->target_velocity = g_motor_state.target_velocity;
-                                g_motor_state.current_velocity = g_motor_state.target_velocity;
-
-                                // Start new setpoint (bit 4)
-                                controlword |= CW_NEW_SETPOINT;
-                                g_motor_state.new_setpoint_active = true;
-                            }
-                            else if (g_motor_state.new_setpoint_active)
-                            {
-                                // Check if target reached
-                                if (txpdo->statusword & SW_TARGET_REACHED_BIT)
-                                {
-                                    // Clear the new setpoint bit once target is reached
-                                    controlword &= ~CW_NEW_SETPOINT;
-                                    g_motor_state.new_setpoint_active = false;
-                                }
+                                // Clear the new setpoint bit once target is reached
+                                controlword &= ~CW_NEW_VELOCITY_SETPOINT;
+                                g_motor_state.new_setpoint_active = false;
                             }
                         }
 
@@ -458,26 +430,17 @@ void* motor_control_cyclic_task(void* arg)
                         // Log values at regular intervals
                         static int log_interval = 0;
                         if (++log_interval >= 250)
-                        {  // Every second (at 250Hz)
-                            // Print status values
-                            printf("Joystick: Y=%d | Speed Mode=%d | E-Stop=%d | Enable=%d\n", y_axis, speed_mode, estop, enable);
-
-                            if (rxpdo->op_mode == OP_MODE_CSV)
-                            {
-                                printf("CSV: Target=%d | Actual=%d | Status=0x%04X\n",
-                                       rxpdo->target_velocity,
-                                       txpdo->velocity_actual,
-                                       txpdo->statusword);
-                            }
-                            else
-                            {
-                                printf("PVM: Target=%d | Actual=%d | Status=0x%04X | Target Reached=%d\n",
-                                       rxpdo->target_velocity,
-                                       txpdo->velocity_actual,
-                                       txpdo->statusword,
-                                       (txpdo->statusword & SW_TARGET_REACHED_BIT) ? 1 : 0);
-                            }
-
+                        {
+                            // Get the CiA 402 state as a string
+                            cia402_state_t current_state = get_cia402_state(txpdo->statusword);
+                            const char* state_string = get_cia402_state_string(current_state);
+                            
+                            printf("Target=%d | Actual=%d | Status=%s | Target Reached=%d\n",
+                                   rxpdo->target_velocity,
+                                   txpdo->velocity_actual,
+                                   state_string,
+                                   (txpdo->statusword & SW_TARGET_REACHED_BIT) ? 1 : 0);
+                        
                             // Reset log interval
                             log_interval = 0;
                         }

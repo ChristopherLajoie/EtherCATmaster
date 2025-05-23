@@ -34,6 +34,7 @@ debug_find_files() {
         echo -e "${YELLOW}Searching in: $dir${NC}"
         find "$dir" \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) \
             -not -path "*/build/*" \
+            -not -path "*/inih/*" \
             -not -path "*/SOEM/*" | while read -r file; do
             echo -e "${GREEN}Found file:${NC} $file"
         done
@@ -49,6 +50,7 @@ FILE_COUNT=0
 for dir in "${SEARCH_DIRS[@]}"; do
     count=$(find "$dir" \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) \
         -not -path "*/build/*" \
+        -not -path "*/inih/*" \
         -not -path "*/SOEM/*" | wc -l)
     FILE_COUNT=$((FILE_COUNT + count))
 done
@@ -64,6 +66,7 @@ if command -v parallel &> /dev/null; then
     for dir in "${SEARCH_DIRS[@]}"; do
         find "$dir" \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) \
             -not -path "*/build/*" \
+            -not -path "*/inih/*" \
             -not -path "*/SOEM/*" | parallel -j$(nproc) clang-format -style=file -i
     done
 else
@@ -71,6 +74,7 @@ else
     for dir in "${SEARCH_DIRS[@]}"; do
         find "$dir" \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) \
             -not -path "*/build/*" \
+            -not -path "*/inih/*" \
             -not -path "*/SOEM/*" -print0 | xargs -0 -I {} sh -c '
             clang-format -style=file -i "{}"
             printf "."

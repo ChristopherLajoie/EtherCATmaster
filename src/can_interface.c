@@ -1,4 +1,6 @@
-
+#ifdef __INTELLISENSE__
+#define CAN_MODE_SIMULATOR
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -321,7 +323,7 @@ int initialize_can_bus(const char* interface)
     printf("Initializing simulated CAN bus on interface: %s\n", interface);
 
     // Initialize the simulator data structure
-    memset(&can_sim, 0, sizeof(CANSimulator));
+    memset(&can_sim, 0, sizeof(CANSimulator)); 
     pthread_mutex_init(&can_sim.mutex, NULL);
 
     // Set default values
@@ -780,14 +782,12 @@ int init_can_interface(void)
         printf("Failed to initialize simulated CAN bus\n");
         return 0;
     }
-    printf("Using SIMULATED CAN interface\n");
 #else
     if (!initialize_can_bus("can0"))
     {
         printf("Failed to initialize CAN bus\n");
         return 0;
     }
-    printf("Using REAL CAN hardware\n");
 #endif
 
     keep_running = 1;
