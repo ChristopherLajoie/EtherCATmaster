@@ -71,7 +71,7 @@ uint16_t get_cia402_state_code(const char* state_str)
     return 0xFF;
 }
 
-static uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const char* description, const char* unit)
+uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const char* description, const char* unit)
 {
     uint32_t value = 0;
     int size = sizeof(value);
@@ -186,6 +186,7 @@ static bool configure_motion_parameters(int slave)
     int ret;
 
     const motion_param_t params[] = {{0x6080, 0, sizeof(uint32_t), "Max motor speed", MAX_VELOCITY},
+                                     {0x6072, 0, sizeof(uint16_t), "Max torque", MAX_TORQUE},
                                      {0x6083, 0, sizeof(uint32_t), "Profile acceleration", DEFAULT_PROFILE_ACCEL},
                                      {0x6084, 0, sizeof(uint32_t), "Profile deceleration", DEFAULT_PROFILE_DECEL},
                                      {0x6085, 0, sizeof(uint32_t), "Quick stop deceleration", DEFAULT_QUICK_STOP_DECEL},
@@ -408,4 +409,18 @@ char readch(void)
     char ch;
     read(STDIN_FILENO, &ch, 1);
     return ch;
+}
+
+/**
+ * @brief Convert torque value from raw format to mNm
+ * @return The torque value in mNm
+ */
+int convert_to_mNm(int16_t raw_torque)
+{
+    return (raw_torque * 3300) / 1000;
+}
+
+int convert_to_raw(int16_t torque)
+{
+    return (torque * 1000) / 3300;
 }

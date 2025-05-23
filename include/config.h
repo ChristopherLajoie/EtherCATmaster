@@ -60,6 +60,7 @@ typedef struct
     uint16_t tx_pdo_index;
 
     /* Motion parameters */
+    uint16_t max_torque;
     uint32_t max_velocity;
     uint32_t profile_acceleration;
     uint32_t profile_deceleration;

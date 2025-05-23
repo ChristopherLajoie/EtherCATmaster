@@ -40,5 +40,8 @@ bool configure_pdo_mappings(int slave);
 uint8_t get_cia402_state(uint16_t statusword);
 uint16_t get_cia402_state_code(const char* state_str);
 const char* get_cia402_state_string(uint16_t state);
+uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const char* description, const char* unit);
+int convert_to_mNm(int16_t raw_torque);
+int convert_to_raw(int16_t torque);
 
 #endif

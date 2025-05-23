@@ -1,3 +1,15 @@
+/**
+ * @file can_interface.c
+ * @brief CAN bus interface for joystick and control inputs
+ * 
+ * Provides a unified interface for communication with input devices (joystick, 
+ * buttons) over CAN bus. 
+ * 
+ * In simulator mode, provides an interactive keyboard interface to simulate
+ * joystick movements and button presses.
+ * 
+ */
+
 #ifndef CAN_INTERFACE_H
 #define CAN_INTERFACE_H
 

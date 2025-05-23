@@ -1,3 +1,14 @@
+/**
+ * @file config.c
+ * @brief Configuration management for motor control application
+ * 
+ * This file provides functions for loading and parsing configuration settings
+ * from INI files into application-specific data structures. 
+ * 
+ * Uses the inih library for INI file parsing with a generic mapping mechanism
+ * that automatically converts and stores values based on type.
+ */
+
 #include "common.h"
 #include "config.h"
 
@@ -39,6 +50,7 @@ static const ConfigMapping config_map[] = {
     {"pdo_mapping", "tx_pdo_index", TYPE_UINT16, offsetof(MotorConfig, tx_pdo_index), 0},
 
     // Motion parameters
+    {"motion_parameters", "max_torque", TYPE_UINT16, offsetof(MotorConfig, max_torque), 0},
     {"motion_parameters", "max_velocity", TYPE_UINT32, offsetof(MotorConfig, max_velocity), 0},
     {"motion_parameters", "profile_acceleration", TYPE_UINT32, offsetof(MotorConfig, profile_acceleration), 0},
     {"motion_parameters", "profile_deceleration", TYPE_UINT32, offsetof(MotorConfig, profile_deceleration), 0},

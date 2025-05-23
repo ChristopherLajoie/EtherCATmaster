@@ -2,7 +2,7 @@
  * @file main.c
  * @brief Main program for EtherCAT motor control system
  *
- * This program initializes an EtherCAT communication with a Synapticon
+ * Initializes an EtherCAT communication with a Synapticon
  * Actilink-S servo drive and controls it using a CAN interface.
  */
 

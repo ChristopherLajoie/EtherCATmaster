@@ -1,3 +1,13 @@
+/**
+ * @file motor_driver.c
+ * @brief Implementation of the EtherCAT motor driver state machine and control logic
+ * 
+ * The main control loop runs in a dedicated real-time thread that processes
+ * input data from CAN (joystick/buttons) and communicates with the motor 
+ * drive via EtherCAT PDOs at a fixed cycle time.
+ * 
+ */
+
 #include "motor_driver.h"
 #include "hardware_io.h"
 #include <time.h>
@@ -350,10 +360,11 @@ void* motor_control_cyclic_task(void* arg)
                         {
                             uint16_t current_state = get_cia402_state(txpdo->statusword);
                             const char* state_string = get_cia402_state_string(current_state);
-
-                            printf("Target=%-5d | Velocity=%-5d | Status=%-20s\n",
+                            read_drive_parameter(g_motor_control.slave_index, 0x6076, 0x00, "MaxTorque", "raw");
+                            printf("Target: %-5d rpm | Velocity: %-5d rpm | Torque: %-5d mNm | Status: %-20s\n",
                                    rxpdo->target_velocity,
                                    txpdo->velocity_actual,
+                                   convert_to_mNm(txpdo->torque_actual),
                                    state_string);
 
                             log_interval = 0;
@@ -384,7 +395,7 @@ void* motor_control_cyclic_task(void* arg)
                     g_motor_state.reconnection_attempts++;
                     g_motor_state.reconnect_in_progress = true;
 
-                    printf("Attempting to recover\n");
+                    printf("Attempting to recover..\n");
 
                     if (attempt_ethercat_reconnection(&g_motor_state, rxpdo))
                     {

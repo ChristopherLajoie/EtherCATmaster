@@ -5,6 +5,7 @@
 #include "ethercat.h"
 #include "ethercatprint.h"
 #include "ethercatconfig.h"
+#include "hardware_io.h"
 
 #define RX_PDO_INDEX g_config.rx_pdo_index
 #define TX_PDO_INDEX g_config.tx_pdo_index
@@ -30,6 +31,7 @@
 #define CW_FAULT_RESET g_config.fault_reset
 
 /* Motion parameter macros */
+#define MAX_TORQUE convert_to_raw(g_config.max_torque)
 #define MAX_VELOCITY g_config.max_velocity
 #define DEFAULT_PROFILE_ACCEL g_config.profile_acceleration
 #define DEFAULT_PROFILE_DECEL g_config.profile_deceleration

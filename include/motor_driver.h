@@ -28,7 +28,7 @@ typedef struct
     bool reconnect_in_progress;
     struct timespec last_reconnect_attempt;
     int status_print_counter;
-    int reconnection_attempts;  // Add this line
+    int reconnection_attempts;  
 } motor_control_state_t;
 
 void* motor_control_cyclic_task(void* arg);
