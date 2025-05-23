@@ -1,7 +1,3 @@
-/**
- * @file config.h
- * @brief Configuration handling for motor control
- */
 #ifndef CONFIG_H
 #define CONFIG_H
 
@@ -10,9 +6,6 @@
 #include <stdbool.h>
 #include "ini.h"
 
-/**
- * @brief Configuration parameter types
- */
 typedef enum
 {
     TYPE_STRING,
@@ -23,9 +16,6 @@ typedef enum
     TYPE_UINT8
 } ConfigType;
 
-/**
- * @brief Configuration mapping structure
- */
 typedef struct
 {
     const char* section;
@@ -35,9 +25,6 @@ typedef struct
     size_t max_len;
 } ConfigMapping;
 
-/**
- * @brief Motor configuration structure
- */
 typedef struct
 {
     /* EtherCAT parameters */
@@ -58,11 +45,11 @@ typedef struct
     uint16_t sw_switch_on_disabled_bit;
     uint16_t sw_target_reached_bit;
     uint16_t sw_no_communication;
-    
+
     /* Control word bits */
     uint16_t new_velocity_setpoint;
     uint16_t shutdown;
-    uint16_t switch_on; /* Note: renamed from switchon */
+    uint16_t switch_on;
     uint16_t enable;
     uint16_t disable_voltage;
     uint16_t disable_operation;
@@ -86,10 +73,8 @@ typedef struct
     int joystick_deadzone;
 } MotorConfig;
 
-/* Global configuration */
 extern MotorConfig g_config;
 
-/* Configuration functions */
 bool load_config(const char* filename);
 
-#endif /* CONFIG_H */
+#endif

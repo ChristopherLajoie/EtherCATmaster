@@ -12,18 +12,12 @@
 #include "motor_driver.h"
 #include "config.h"
 
-/* Configuration constants */
-#define MAX_ETHERCAT_RETRIES 20
+#define MAX_ETHERCAT_RETRIES 5
 #define ETHERCAT_RETRY_DELAY_SEC 3
 #define SLEEP_INTERVAL_US 100000
 
-/* Global motor control structure */
 MotorControl g_motor_control = {.ifname = "eth0", .cycletime = 4000, .run = 1, .slave_index = 1};
 
-/**
- * @brief Signal handler for graceful termination
- * @param sig Signal number
- */
 static void signal_handler(int sig)
 {
     static volatile sig_atomic_t signal_count = 0;
@@ -42,9 +36,6 @@ static void signal_handler(int sig)
     }
 }
 
-/**
- * @brief Initialize signal handlers
- */
 static int setup_signal_handlers(void)
 {
     struct sigaction sa;
@@ -68,9 +59,6 @@ static int setup_signal_handlers(void)
     return 0;
 }
 
-/**
- * @brief Initialize EtherCAT with retry logic
- */
 static bool initialize_ethercat(void)
 {
     int retry_count = 0;
@@ -86,7 +74,6 @@ static bool initialize_ethercat(void)
 
         if (retry_count >= MAX_ETHERCAT_RETRIES)
         {
-            printf("Failed to find EtherCAT slaves.\n");
             break;
         }
 
@@ -99,9 +86,6 @@ static bool initialize_ethercat(void)
     return false;
 }
 
-/**
- * @brief Clean up resources before exit
- */
 static void cleanup_resources(void)
 {
     ec_close();
@@ -109,9 +93,6 @@ static void cleanup_resources(void)
     disable_raw_mode();
 }
 
-/**
- * @brief Main program entry point
- */
 int main(void)
 {
     if (!load_config("motor_config.ini"))

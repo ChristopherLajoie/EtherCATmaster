@@ -1,7 +1,3 @@
-/**
- * @file ethercat_defs.h
- * @brief EtherCAT and CiA 402 protocol definitions
- */
 #ifndef ETHERCAT_DEFS_H
 #define ETHERCAT_DEFS_H
 
@@ -9,23 +5,6 @@
 #include "ethercat.h"
 #include "ethercatprint.h"
 #include "ethercatconfig.h"
-
-/* CiA 402 state machine mask */
-#define STATUS_STATE_MASK 0x6F
-
-/* CiA 402 state machine enumeration */
-typedef enum
-{
-    CIA402_STATE_NOT_READY = 0x00,
-    CIA402_STATE_SWITCH_ON_DISABLED = 0x40,
-    CIA402_STATE_READY_TO_SWITCH_ON = 0x21,
-    CIA402_STATE_SWITCHED_ON = 0x23,
-    CIA402_STATE_OPERATION_ENABLED = 0x27,
-    CIA402_STATE_QUICK_STOP_ACTIVE = 0x07,
-    CIA402_STATE_FAULT_REACTION_ACTIVE = 0x0F,
-    CIA402_STATE_FAULT = 0x08,
-    CIA402_STATE_UNKNOWN = 0xFF
-} cia402_state_t;
 
 #define RX_PDO_INDEX g_config.rx_pdo_index
 #define TX_PDO_INDEX g_config.tx_pdo_index
@@ -63,4 +42,4 @@ typedef enum
 #define JOYSTICK_CENTER g_config.joystick_center
 #define JOYSTICK_DEADZONE g_config.joystick_deadzone
 
-#endif /* ETHERCAT_DEFS_H */
+#endif

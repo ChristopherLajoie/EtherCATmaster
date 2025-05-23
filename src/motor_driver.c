@@ -45,11 +45,8 @@ bool attempt_ethercat_reconnection()
 {
     if (ec_slave[g_motor_control.slave_index].islost)
     {
-        bool success = ethercat_init();
-
-        if (success)
+        if (ethercat_init())
         {
-            ec_slave[g_motor_control.slave_index].islost = FALSE;
             return true;
         }
     }
@@ -60,14 +57,14 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
 {
     if (statusword & SW_FAULT_BIT)
     {
-        cia402_state_t current_state = get_cia402_state(statusword);
+        uint16_t current_state = get_cia402_state(statusword);
 
-        if (state->last_reported_fault_id != (statusword & STATUS_STATE_MASK))
+        if (state->last_reported_fault_id != current_state)
         {
-            printf("Fault detected (0x%04X): %s\n", statusword, get_cia402_state_string(current_state));
+            printf("Fault detected: %s\n", get_cia402_state_string(current_state));
 
             printf("Starting reset sequence\n");
-            state->last_reported_fault_id = statusword & STATUS_STATE_MASK;
+            state->last_reported_fault_id = current_state;
             state->fault_reset_attempts = 0;
         }
 
@@ -76,19 +73,19 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
         switch (reset_step)
         {
             case 0:
-                rxpdo->controlword = 0;  // All bits off
+                rxpdo->controlword = 0;
                 break;
 
             case 1:
-                rxpdo->controlword = CW_FAULT_RESET;  // Fault reset
+                rxpdo->controlword = CW_FAULT_RESET;
                 break;
 
             case 2:
-                rxpdo->controlword = CW_SHUTDOWN;  // Shutdown
+                rxpdo->controlword = CW_SHUTDOWN;
                 break;
 
             case 3:
-                rxpdo->controlword = CW_DISABLEVOLTAGE;  // Disable voltage
+                rxpdo->controlword = CW_DISABLEVOLTAGE;
                 break;
         }
 
@@ -147,7 +144,6 @@ void* motor_control_cyclic_task(void* arg)
             ts.tv_nsec -= 1000000000;
         }
 
-        // Read process data
         wkc = ec_receive_processdata(EC_TIMEOUTRET);
 
         if (wkc > 0)
@@ -156,88 +152,21 @@ void* motor_control_cyclic_task(void* arg)
             if (g_motor_state.consecutive_comm_errors > 0)
             {
                 g_motor_state.consecutive_comm_errors = 0;
-                g_motor_state.reconnection_attempts = 0;  // Reset reconnection attempts counter
+                g_motor_state.reconnection_attempts = 0;
             }
 
-            // If previously lost connection was restored
-            if (ec_slave[g_motor_control.slave_index].islost)
-            {
-                ec_slave[g_motor_control.slave_index].islost = FALSE;
-                printf("Connection to EtherCAT slave restored, reinitializing...\n");
-
-                g_motor_state.state = STATE_BOOT;
-                g_motor_state.init_step = 0;
-                g_motor_state.init_wait = 0;
-                g_motor_state.fault_reset_attempts = 0;
-            }
-
-            // Process based on state
             switch (g_motor_state.state)
             {
                 case STATE_BOOT:
-                    // Only print status every 50 cycles (about 200ms at 250Hz)
-                    if (g_motor_state.status_print_counter++ % 50 == 0)
-                    {
-                        printf("Status: [");
-                        if (txpdo->statusword == SW_NO_COMMUNICATION)
-                        {
-                            printf("NO_COMM");
-                        }
-                        else
-                        {
-                            bool first_flag = true;
 
-                            if (txpdo->statusword & SW_READY_TO_SWITCH_ON_BIT)
-                            {
-                                printf("READY");
-                                first_flag = false;
-                            }
-
-                            if (txpdo->statusword & SW_SWITCHED_ON_BIT)
-                            {
-                                if (!first_flag)
-                                    printf(" | ");
-                                printf("SWITCHED_ON");
-                                first_flag = false;
-                            }
-
-                            if (txpdo->statusword & SW_OPERATION_ENABLED_BIT)
-                            {
-                                if (!first_flag)
-                                    printf(" | ");
-                                printf("ENABLED");
-                                first_flag = false;
-                            }
-
-                            if (txpdo->statusword & SW_FAULT_BIT)
-                            {
-                                if (!first_flag)
-                                    printf(" | ");
-                                printf("FAULT");
-                                first_flag = false;
-                            }
-
-                            if (txpdo->statusword & SW_SWITCH_ON_DISABLED_BIT)
-                            {
-                                if (!first_flag)
-                                    printf(" | ");
-                                printf("DISABLED");
-                                first_flag = false;
-                            }
-                        }
-                        printf("]\n");
-                    }
-
-                    // Handle different states specifically
                     if (txpdo->statusword == 0)
                     {
-                        // Handle zero statusword (no valid status)
                         static int zero_statusword_count = 0;
 
-                        // Just alternate between fault reset and shutdown
-                        rxpdo->controlword = (zero_statusword_count % 2) ? CW_FAULT_RESET : CW_SHUTDOWN;
+                        rxpdo->controlword = CW_DISABLEVOLTAGE;
 
                         zero_statusword_count++;
+
                         // After significant time, proceed anyway
                         if (zero_statusword_count > 500)
                         {
@@ -248,14 +177,11 @@ void* motor_control_cyclic_task(void* arg)
                     }
                     else if (txpdo->statusword & SW_FAULT_BIT)
                     {
-                        // Use the helper function to handle fault state
                         if (handle_fault_state(rxpdo, txpdo->statusword, &g_motor_state))
                         {
-                            // If fault handling still in progress, break here
                             break;
                         }
 
-                        // After more attempts, give up and proceed
                         if (++g_motor_state.init_wait > 100)
                         {
                             g_motor_state.fault_reset_attempts = 0;
@@ -265,7 +191,7 @@ void* motor_control_cyclic_task(void* arg)
                     }
                     else if (txpdo->statusword & SW_SWITCH_ON_DISABLED_BIT)
                     {
-                        rxpdo->controlword = CW_SHUTDOWN;  // This transitions to "Ready to switch on"
+                        rxpdo->controlword = CW_SHUTDOWN;
                         if (++g_motor_state.init_wait > 50)
                         {
                             g_motor_state.state = STATE_INIT;
@@ -282,34 +208,30 @@ void* motor_control_cyclic_task(void* arg)
                     break;
 
                 case STATE_INIT:
-                    // Simple initialization sequence
+
                     switch (g_motor_state.init_step)
                     {
-                        case 0:  // Start with more robust reset sequence
-                            // Print the current drive status for debugging
+                        // Deep reset state
+                        case 0:
+
                             if (g_motor_state.init_wait == 0)
                             {
-                                // First step: all bits off
                                 rxpdo->controlword = 0;
                             }
                             else if (g_motor_state.init_wait == 20)
                             {
-                                // Next try fault reset
                                 rxpdo->controlword = CW_FAULT_RESET;
                             }
                             else if (g_motor_state.init_wait == 40)
                             {
-                                // Then disable voltage (more aggressive than shutdown)
                                 rxpdo->controlword = CW_DISABLEVOLTAGE;
                             }
                             else if (g_motor_state.init_wait == 60)
                             {
-                                // Another fault reset
                                 rxpdo->controlword = CW_FAULT_RESET;
                             }
                             else if (g_motor_state.init_wait == 80)
                             {
-                                // Finally try normal shutdown
                                 rxpdo->controlword = CW_SHUTDOWN;
                             }
 
@@ -320,42 +242,48 @@ void* motor_control_cyclic_task(void* arg)
                             }
                             break;
 
-                        case 1:  // Shutdown state - wait for "Ready to switch on"
+                        case 1:
                             rxpdo->controlword = CW_SHUTDOWN;
 
-                            // Check for "Ready to switch on" state
-                            uint8_t state_bits = txpdo->statusword & 0x006F;
-                            if (state_bits == 0x0021 || state_bits == 0x0031)
+                            uint8_t state_bits = get_cia402_state(txpdo->statusword);
+
+                            if ((state_bits & ~SW_VOLTAGE_ENABLED_BIT) == get_cia402_state_code("Ready To Switch On"))
                             {
                                 g_motor_state.init_step = 2;
                             }
-                            else if (++g_motor_state.init_wait > 2000)  // Give much more time (8 seconds at 250Hz)
+                            else if (++g_motor_state.init_wait > 2000)
                             {
                                 g_motor_state.init_step = 0;
                                 g_motor_state.init_wait = 0;
                             }
                             break;
 
-                        case 2:  // Switch on
+                        case 2:
                             rxpdo->controlword = CW_SWITCHON;
-                            if ((txpdo->statusword & 0x006F) == 0x0023)
-                            {  // Switched on
+
+                            state_bits = get_cia402_state(txpdo->statusword);
+
+                            if (state_bits == get_cia402_state_code("Switched On"))
+                            {
                                 g_motor_state.init_step = 3;
                             }
                             break;
 
-                        case 3:  // Set operation mode
-                            if (txpdo->op_mode_display == rxpdo->op_mode || ++g_motor_state.init_wait > 100)
+                        case 3:
+                            if (txpdo->op_mode_display == rxpdo->op_mode || ++g_motor_state.init_wait > 500)
                             {
                                 g_motor_state.init_step = 4;
                                 g_motor_state.init_wait = 0;
                             }
                             break;
 
-                        case 4:  // Enable operation
+                        case 4:
                             rxpdo->controlword = CW_ENABLE;
-                            if ((txpdo->statusword & 0x006F) == 0x0027)
-                            {  // Operation enabled
+
+                            state_bits = get_cia402_state(txpdo->statusword);
+
+                            if (state_bits == get_cia402_state_code("Operation Enabled"))
+                            {
                                 g_motor_state.state = STATE_OPERATIONAL;
                                 g_motor_state.new_setpoint_active = false;
                             }
@@ -364,129 +292,100 @@ void* motor_control_cyclic_task(void* arg)
                     break;
 
                 case STATE_OPERATIONAL:
-                    // Maintain enabled state
+
                     uint16_t controlword = CW_ENABLE;
 
                     if (!(txpdo->statusword & SW_OPERATION_ENABLED_BIT))
                     {
-                        printf("Warning: Operation disabled during operation (0x%04X), reinitializing\n", txpdo->statusword);
-                        // cia402_decode_statusword(txpdo->statusword); // Print detailed status
+                        printf("Warning: Operation disabled during operation, reinitializing\n");
+
                         g_motor_state.state = STATE_INIT;
                         g_motor_state.init_step = 0;
                         g_motor_state.init_wait = 0;
-                        break;  // Don't exit thread, just try to reinitialize
+                        break;
                     }
 
-                    // Only process commands if operation is enabled
                     if (txpdo->statusword & SW_OPERATION_ENABLED_BIT)
                     {
-                        // Get joystick values and button states
-                        int y_axis = get_can_y_axis();     // 4-252, 128 is center
-                        int speed_mode = get_can_speed();  // 0 = normal, 1 = reduced speed
-                        int estop = get_can_estop();       // 0 = normal, 1 = emergency stop
-                        int enable = get_can_enable();     // 0 = disabled, 1 = enabled
+                        int y_axis = get_can_y_axis();
+                        int speed_mode = get_can_speed();
+                        int estop = get_can_estop();
+                        int enable = get_can_enable();
 
-                        // Handle e-stop: If e-stop is NOT active, we can move
                         if (!estop)
                         {
                             g_motor_state.target_velocity = 0;
                         }
-                        // Handle enable: Only move if enabled
+
                         else if (enable)
                         {
-                            // Map joystick Y-axis to velocity
                             g_motor_state.target_velocity = map_joystick_to_velocity(y_axis, speed_mode);
                         }
                         else
                         {
-                            // Disabled state - no movement
                             rxpdo->target_velocity = 0;
                         }
 
-                        // Check if target velocity has changed
                         if (g_motor_state.target_velocity != g_motor_state.current_velocity)
                         {
                             rxpdo->target_velocity = g_motor_state.target_velocity;
                             g_motor_state.current_velocity = g_motor_state.target_velocity;
 
-                            // Start new setpoint (bit 4)
                             controlword |= CW_NEW_VELOCITY_SETPOINT;
                             g_motor_state.new_setpoint_active = true;
                         }
                         else if (g_motor_state.new_setpoint_active)
                         {
-                            // Check if target reached
                             if (txpdo->statusword & SW_TARGET_REACHED_BIT)
                             {
-                                // Clear the new setpoint bit once target is reached
                                 controlword &= ~CW_NEW_VELOCITY_SETPOINT;
                                 g_motor_state.new_setpoint_active = false;
                             }
                         }
 
-                        // Set the control word with mode-specific bits
                         rxpdo->controlword = controlword;
 
-                        // Log values at regular intervals
                         static int log_interval = 0;
                         if (++log_interval >= 250)
                         {
-                            // Get the CiA 402 state as a string
-                            cia402_state_t current_state = get_cia402_state(txpdo->statusword);
+                            uint16_t current_state = get_cia402_state(txpdo->statusword);
                             const char* state_string = get_cia402_state_string(current_state);
-                            
-                            printf("Target=%d | Actual=%d | Status=%s | Target Reached=%d\n",
+
+                            printf("Target=%-5d | Velocity=%-5d | Status=%-20s\n",
                                    rxpdo->target_velocity,
                                    txpdo->velocity_actual,
-                                   state_string,
-                                   (txpdo->statusword & SW_TARGET_REACHED_BIT) ? 1 : 0);
-                        
-                            // Reset log interval
+                                   state_string);
+
                             log_interval = 0;
                         }
-                    }
-                    else
-                    {
-                        // If operation not enabled, try re-enabling
-                        printf("Warning: Operation not enabled (0x%04X), reinitializing\n", txpdo->statusword);
-                        g_motor_state.state = STATE_INIT;
-                        g_motor_state.init_step = 0;
-                        g_motor_state.init_wait = 0;
                     }
                     break;
             }
         }
         else
         {
-            // Increment communication error counter
             g_motor_state.consecutive_comm_errors++;
 
-            // Check if we've exceeded the error threshold AND connection isn't already marked as lost
             if (g_motor_state.consecutive_comm_errors >= MAX_COMM_ERRORS && !ec_slave[g_motor_control.slave_index].islost)
             {
-                // Mark the slave as lost for the next iteration
                 ec_slave[g_motor_control.slave_index].islost = TRUE;
-                printf("Connection to EtherCAT slave lost\n");
+                printf("Connection lost\n");
                 clock_gettime(CLOCK_MONOTONIC, &g_motor_state.last_reconnect_attempt);
             }
 
-            // If connection is lost, periodically attempt reconnection
             if (ec_slave[g_motor_control.slave_index].islost)
             {
                 struct timespec current_time;
                 clock_gettime(CLOCK_MONOTONIC, &current_time);
 
-                // Attempt reconnection every 5 seconds
                 if (!g_motor_state.reconnect_in_progress
                     && (current_time.tv_sec - g_motor_state.last_reconnect_attempt.tv_sec) >= 5)
                 {
-                    // Increment attempt counter and lock the reconnection flag
                     g_motor_state.reconnection_attempts++;
                     g_motor_state.reconnect_in_progress = true;
 
-                    printf("Attempting to recover EtherCAT connection\n");
+                    printf("Attempting to recover\n");
 
-                    // Attempt reconnection with our simplified function
                     if (attempt_ethercat_reconnection(&g_motor_state, rxpdo))
                     {
                         g_motor_state.consecutive_comm_errors = 0;
@@ -497,24 +396,20 @@ void* motor_control_cyclic_task(void* arg)
                         g_motor_state.reconnection_attempts = 0;
                     }
 
-                    // Update timestamp and clear flag regardless of outcome
                     g_motor_state.reconnect_in_progress = false;
                     g_motor_state.last_reconnect_attempt = current_time;
                 }
             }
         }
 
-        // Send process data (try even during errors to maintain timing)
         ec_send_processdata();
     }
 
-    // Shutdown sequence
     printf("Shutting down motor\n");
     int shutdown_cycles = 100;
 
     while (shutdown_cycles-- > 0)
     {
-        // DC synchronization
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, &tleft);
 
         // Next cycle time
@@ -525,17 +420,13 @@ void* motor_control_cyclic_task(void* arg)
             ts.tv_nsec -= 1000000000;
         }
 
-        // Read process data
         ec_receive_processdata(EC_TIMEOUTRET);
 
-        // Stop motor and disable operations
         rxpdo->target_velocity = 0;
         rxpdo->controlword = CW_DISABLEOPERATION;
 
-        // Send process data
         ec_send_processdata();
     }
 
-    printf("Motor control thread finished\n");
     return NULL;
 }

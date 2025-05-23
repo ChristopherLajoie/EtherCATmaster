@@ -323,7 +323,7 @@ int initialize_can_bus(const char* interface)
     printf("Initializing simulated CAN bus on interface: %s\n", interface);
 
     // Initialize the simulator data structure
-    memset(&can_sim, 0, sizeof(CANSimulator)); 
+    memset(&can_sim, 0, sizeof(CANSimulator));
     pthread_mutex_init(&can_sim.mutex, NULL);
 
     // Set default values

@@ -1,9 +1,3 @@
-/**
- * can_interface.h
- *
- * CAN interface for both real hardware and simulation.
- */
-
 #ifndef CAN_INTERFACE_H
 #define CAN_INTERFACE_H
 
