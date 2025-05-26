@@ -13,7 +13,8 @@ typedef enum
     TYPE_UINT16,
     TYPE_UINT32,
     TYPE_INT16,
-    TYPE_UINT8
+    TYPE_UINT8,
+    TYPE_FLOAT
 } ConfigType;
 
 typedef struct
@@ -30,10 +31,7 @@ typedef struct
     /* EtherCAT parameters */
     char interface[32];
     int cycletime;
-    int slave_index;
-    int retry_attempts;
-    int retry_delay_ms;
-    int state_transition_timeout_us;
+    int num_motors;
 
     /* Status word bits */
     uint16_t sw_ready_to_switch_on_bit;
@@ -72,6 +70,10 @@ typedef struct
     int joystick_max;
     int joystick_center;
     int joystick_deadzone;
+    
+    float turn_factor;        
+    int reverse_left_motor;   
+    int reverse_right_motor;  
 } MotorConfig;
 
 extern MotorConfig g_config;

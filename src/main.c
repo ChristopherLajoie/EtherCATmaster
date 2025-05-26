@@ -16,7 +16,13 @@
 #define ETHERCAT_RETRY_DELAY_SEC 3
 #define SLEEP_INTERVAL_US 100000
 
-MotorControl g_motor_control = {.ifname = "eth0", .cycletime = 4000, .run = 1, .slave_index = 1};
+MotorControl g_motor_control = {.ifname = "eth0",
+                                .cycletime = 4000,
+                                .run = 1,
+                                .num_motors = 2,
+                                .slave_indices = {1, 2},
+                                .reconnect_in_progress = false,
+                                .reconnection_attempts = 0};
 
 static void signal_handler(int sig)
 {
@@ -103,7 +109,10 @@ int main(void)
     /* Update motor control with config values */
     g_motor_control.ifname = g_config.interface;
     g_motor_control.cycletime = g_config.cycletime;
-    g_motor_control.slave_index = g_config.slave_index;
+    g_motor_control.num_motors = g_config.num_motors;
+
+    g_motor_control.slave_indices[LEFT_MOTOR] = 1;
+    g_motor_control.slave_indices[RIGHT_MOTOR] = 2;
 
     if (setup_signal_handlers() != 0)
     {
@@ -125,7 +134,10 @@ int main(void)
     }
 
     /* Configure operation mode to PVM */
-    g_motor_control.rxpdo->op_mode = 3;
+    for (int i = 0; i < g_motor_control.num_motors; i++)
+    {
+        g_motor_control.rxpdo[i]->op_mode = 3;  
+    }
 
     if (pthread_create(&g_motor_control.cyclic_thread, NULL, motor_control_cyclic_task, NULL) != 0)
     {

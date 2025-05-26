@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <time.h>
+#include <stdbool.h>
 
 typedef struct
 {

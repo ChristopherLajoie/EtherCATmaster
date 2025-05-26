@@ -5,6 +5,10 @@
 #include <signal.h>
 #include <pthread.h>
 
+#define MAX_MOTORS 2
+#define LEFT_MOTOR 0
+#define RIGHT_MOTOR 1
+
 /* RxPDO (master to slave) */
 #pragma pack(push, 1) /* no implicit padding */
 typedef struct
@@ -36,11 +40,15 @@ typedef struct
     char* ifname;
     int cycletime;
     volatile sig_atomic_t run;
-    int slave_index;
+    int slave_indices[MAX_MOTORS];
+    int num_motors;
     char IOmap[4096];
     pthread_t cyclic_thread;
-    rxpdo_t* rxpdo;
-    txpdo_t* txpdo;
+    rxpdo_t* rxpdo[MAX_MOTORS];     
+    txpdo_t* txpdo[MAX_MOTORS];
+    bool reconnect_in_progress;
+    struct timespec last_reconnect_attempt;
+    int reconnection_attempts;
 } MotorControl;
 
 extern MotorControl g_motor_control;

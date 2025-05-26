@@ -1,10 +1,10 @@
 /**
  * @file config.c
  * @brief Configuration management for motor control application
- * 
+ *
  * This file provides functions for loading and parsing configuration settings
- * from INI files into application-specific data structures. 
- * 
+ * from INI files into application-specific data structures.
+ *
  * Uses the inih library for INI file parsing with a generic mapping mechanism
  * that automatically converts and stores values based on type.
  */
@@ -20,10 +20,7 @@ static const ConfigMapping config_map[] = {
     // EtherCAT parameters
     {"ethercat", "interface", TYPE_STRING, offsetof(MotorConfig, interface), sizeof(((MotorConfig*)0)->interface)},
     {"ethercat", "cycletime", TYPE_INT, offsetof(MotorConfig, cycletime), 0},
-    {"ethercat", "slave_index", TYPE_INT, offsetof(MotorConfig, slave_index), 0},
-    {"ethercat", "retry_attempts", TYPE_INT, offsetof(MotorConfig, retry_attempts), 0},
-    {"ethercat", "retry_delay_ms", TYPE_INT, offsetof(MotorConfig, retry_delay_ms), 0},
-    {"ethercat", "state_transition_timeout_us", TYPE_INT, offsetof(MotorConfig, state_transition_timeout_us), 0},
+    {"ethercat", "num_motors", TYPE_INT, offsetof(MotorConfig, num_motors), 0},
 
     // Status word bits
     {"status_word_bits", "ready_to_switch_on", TYPE_UINT16, offsetof(MotorConfig, sw_ready_to_switch_on_bit), 0},
@@ -62,6 +59,11 @@ static const ConfigMapping config_map[] = {
     {"joystick", "max_value", TYPE_INT, offsetof(MotorConfig, joystick_max), 0},
     {"joystick", "center_value", TYPE_INT, offsetof(MotorConfig, joystick_center), 0},
     {"joystick", "deadzone", TYPE_INT, offsetof(MotorConfig, joystick_deadzone), 0},
+
+    // Differential drive parameters
+    {"differential_drive", "turn_factor", TYPE_FLOAT, offsetof(MotorConfig, turn_factor), 0},
+    {"differential_drive", "reverse_left_motor", TYPE_INT, offsetof(MotorConfig, reverse_left_motor), 0},
+    {"differential_drive", "reverse_right_motor", TYPE_INT, offsetof(MotorConfig, reverse_right_motor), 0},
 };
 
 bool load_config(const char* filename)
@@ -106,6 +108,20 @@ static int config_handler(void* user, const char* section, const char* name, con
                 case TYPE_UINT8:
                     *(uint8_t*)target = (uint8_t)strtol(value, NULL, 0);
                     break;
+                case TYPE_FLOAT:
+                {
+                    float val = strtof(value, NULL);
+                    if (strcmp(name, "turn_factor") == 0)
+                    {
+                        if (val < 0.0f || val > 1.0f)
+                        {
+                            fprintf(stderr, "Invalid turn factor value");
+                            return 0;
+                        }
+                    }
+                    *(float*)target = val;
+                }
+                break;
                 default:
                     fprintf(stderr, "Warning: Unknown type for [%s]%s\n", section, name);
                     return 0;

@@ -1,6 +1,6 @@
-#ifdef __INTELLISENSE__
-#define CAN_MODE_SIMULATOR
-#endif
+//#ifdef __INTELLISENSE__
+//#define CAN_MODE_SIMULATOR
+//#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -591,7 +591,7 @@ int receive_can_message(int can_id, uint8_t* data, int* data_length, int timeout
         return 0;
     }
 
-    if (frame.can_id != can_id)
+    if (frame.can_id != (canid_t)can_id)
     {
         // Not the expected frame
         return 0;

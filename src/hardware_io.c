@@ -292,7 +292,6 @@ static bool wait_for_preop_state(void)
 bool ethercat_init(void)
 {
     int chk;
-    int slave;
 
     /* Initialize SOEM, bind socket to ifname */
     if (!ec_init(g_motor_control.ifname))
@@ -302,15 +301,14 @@ bool ethercat_init(void)
     }
 
     /* Find and auto-configure slaves */
-    if (ec_config_init(FALSE) <= 0)
+    if (ec_config_init(FALSE) < g_motor_control.num_motors)
     {
-        fprintf(stderr, "No slaves found\n");
+        fprintf(stderr, "One or more slaves missing\n");
         ec_close();
         return false;
     }
 
-    printf("%d slaves found and configured.\n", ec_slavecount);
-    slave = g_motor_control.slave_index;
+    printf("%d slave(s) found and configured.\n", ec_slavecount);
 
     ec_slave[0].state = EC_STATE_PRE_OP;
     ec_writestate(0);
@@ -321,10 +319,14 @@ bool ethercat_init(void)
         return false;
     }
 
-    if (!configure_pdo_mappings(slave))
+    for (int i = 0; i < g_motor_control.num_motors; i++)
     {
-        ec_close();
-        return false;
+        int slave_index = g_motor_control.slave_indices[i];
+        if (!configure_pdo_mappings(slave_index))
+        {
+            ec_close();
+            return false;
+        }
     }
 
     ec_configdc();
@@ -355,8 +357,12 @@ bool ethercat_init(void)
     printf("Operational state reached for all slaves.\n");
 
     /* Set up process data pointers */
-    g_motor_control.rxpdo = (rxpdo_t*)(ec_slave[g_motor_control.slave_index].outputs);
-    g_motor_control.txpdo = (txpdo_t*)(ec_slave[g_motor_control.slave_index].inputs);
+    for (int i = 0; i < g_motor_control.num_motors; i++)
+    {
+        int slave_index = g_motor_control.slave_indices[i];
+        g_motor_control.rxpdo[i] = (rxpdo_t*)(ec_slave[slave_index].outputs);
+        g_motor_control.txpdo[i] = (txpdo_t*)(ec_slave[slave_index].inputs);
+    }
 
     return true;
 }
