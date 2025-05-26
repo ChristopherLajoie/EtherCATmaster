@@ -70,10 +70,10 @@ typedef struct
     int joystick_max;
     int joystick_center;
     int joystick_deadzone;
-    
-    float turn_factor;        
-    int reverse_left_motor;   
-    int reverse_right_motor;  
+
+    float turn_factor;
+    int reverse_left_motor;
+    int reverse_right_motor;
 } MotorConfig;
 
 extern MotorConfig g_config;

@@ -136,7 +136,7 @@ int main(void)
     /* Configure operation mode to PVM */
     for (int i = 0; i < g_motor_control.num_motors; i++)
     {
-        g_motor_control.rxpdo[i]->op_mode = 3;  
+        g_motor_control.rxpdo[i]->op_mode = 3;
     }
 
     if (pthread_create(&g_motor_control.cyclic_thread, NULL, motor_control_cyclic_task, NULL) != 0)

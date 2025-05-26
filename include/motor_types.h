@@ -44,7 +44,7 @@ typedef struct
     int num_motors;
     char IOmap[4096];
     pthread_t cyclic_thread;
-    rxpdo_t* rxpdo[MAX_MOTORS];     
+    rxpdo_t* rxpdo[MAX_MOTORS];
     txpdo_t* txpdo[MAX_MOTORS];
     bool reconnect_in_progress;
     struct timespec last_reconnect_attempt;
