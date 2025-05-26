@@ -1,0 +1,83 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include "ini.h"
+
+typedef enum
+{
+    TYPE_STRING,
+    TYPE_INT,
+    TYPE_UINT16,
+    TYPE_UINT32,
+    TYPE_INT16,
+    TYPE_UINT8,
+    TYPE_FLOAT
+} ConfigType;
+
+typedef struct
+{
+    const char* section;
+    const char* name;
+    ConfigType type;
+    size_t offset;
+    size_t max_len;
+} ConfigMapping;
+
+typedef struct
+{
+    /* EtherCAT parameters */
+    char interface[32];
+    int cycletime;
+    int num_motors;
+
+    /* Status word bits */
+    uint16_t sw_ready_to_switch_on_bit;
+    uint16_t sw_switched_on_bit;
+    uint16_t sw_operation_enabled_bit;
+    uint16_t sw_fault_bit;
+    uint16_t sw_voltage_enabled_bit;
+    uint16_t sw_quick_stop_bit;
+    uint16_t sw_switch_on_disabled_bit;
+    uint16_t sw_target_reached_bit;
+    uint16_t sw_no_communication;
+
+    /* Control word bits */
+    uint16_t new_velocity_setpoint;
+    uint16_t shutdown;
+    uint16_t switch_on;
+    uint16_t enable;
+    uint16_t disable_voltage;
+    uint16_t disable_operation;
+    uint16_t fault_reset;
+
+    /* PDO mapping parameters */
+    uint16_t rx_pdo_index;
+    uint16_t tx_pdo_index;
+
+    /* Motion parameters */
+    uint16_t max_torque;
+    uint32_t max_velocity;
+    uint32_t profile_acceleration;
+    uint32_t profile_deceleration;
+    uint32_t quick_stop_deceleration;
+    int16_t motion_profile_type;
+
+    /* Joystick parameters */
+    int joystick_min;
+    int joystick_max;
+    int joystick_center;
+    int joystick_deadzone;
+    
+    float turn_factor;        
+    int reverse_left_motor;   
+    int reverse_right_motor;  
+} MotorConfig;
+
+extern MotorConfig g_config;
+
+bool load_config(const char* filename);
+
+#endif

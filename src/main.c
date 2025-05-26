@@ -1,100 +1,162 @@
+/**
+ * @file main.c
+ * @brief Main program for EtherCAT motor control system
+ *
+ * Initializes an EtherCAT communication with a Synapticon
+ * Actilink-S servo drive and controls it using a CAN interface.
+ */
+
 #include "common.h"
-#include "terminal_io.h"
-#include "can_monitor.h"
-#include "can_wrapper.h"
-#include "motor_control.h"
+#include "hardware_io.h"
+#include "can_interface.h"
+#include "motor_driver.h"
+#include "config.h"
 
-// Global instance
-MotorControl g_motor_control = {
-    .ifname = "eth0",
-    .cycletime = 4000, // 4ms cycle time (250Hz)
-    .run = 1,
-    .slave_index = 1};
+#define MAX_ETHERCAT_RETRIES 5
+#define ETHERCAT_RETRY_DELAY_SEC 3
+#define SLEEP_INTERVAL_US 100000
 
-// Signal handler
-void signal_handler(int sig)
+MotorControl g_motor_control = {.ifname = "eth0",
+                                .cycletime = 4000,
+                                .run = 1,
+                                .num_motors = 2,
+                                .slave_indices = {1, 2},
+                                .reconnect_in_progress = false,
+                                .reconnection_attempts = 0};
+
+static void signal_handler(int sig)
 {
-    printf("\nSignal %d received, stopping program...\n", sig);
-    g_motor_control.run = 0;
+    static volatile sig_atomic_t signal_count = 0;
+    signal_count++;
+
+    printf("\nSignal %d received, stopping program... (%d)\n", sig, signal_count);
+
+    if (signal_count == 1)
+    {
+        g_motor_control.run = 0;
+    }
+    else
+    {
+        printf("Forcing exit...\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
-int main(int argc, char *argv[])
+static int setup_signal_handlers(void)
 {
-    printf("SOEM (Simple Open EtherCAT Master)\n");
-    printf("Synapticon Motor Control - Simplified Version\n");
-
-    // Handle command line parameters
-    if (argc > 1)
-    {
-        g_motor_control.ifname = argv[1];
-    }
-
-    // Register signal handler
     struct sigaction sa;
+
     sa.sa_handler = signal_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
 
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
-
-    // Enable terminal raw mode for keyboard input
-    enable_raw_mode();
-
-    // Initialize CAN monitor
-    if (!init_can_monitor())
+    if (sigaction(SIGINT, &sa, NULL) != 0)
     {
-        printf("Failed to initialize CAN monitor\n");
-        disable_raw_mode();
-        return 1;
+        perror("Failed to set SIGINT handler");
+        return -1;
     }
 
-    printf("CAN monitor initialized\n");
-
-    // Initialize EtherCAT and get process data pointers
-    if (!ethercat_init())
+    if (sigaction(SIGTERM, &sa, NULL) != 0)
     {
-        printf("Failed to setup EtherCAT. Exiting.\n");
-        stop_can_monitor();
-        disable_raw_mode();
-        return 1;
+        perror("Failed to set SIGTERM handler");
+        return -1;
     }
 
-    g_motor_control.rxpdo->op_mode = OP_MODE_PVM; // CHANGE MODE HERE
+    return 0;
+}
 
-    // Create cyclic task thread
-    if (pthread_create(&g_motor_control.cyclic_thread, NULL, motor_control_cyclic_task, NULL) != 0)
+static bool initialize_ethercat(void)
+{
+    int retry_count = 0;
+
+    while (g_motor_control.run && retry_count < MAX_ETHERCAT_RETRIES)
     {
-        printf("Failed to create cyclic task thread\n");
-        ec_close();
-        stop_can_monitor();
-        disable_raw_mode();
-        return 1;
-    }
-
-    printf("Motor control running. Press Ctrl+C to exit.\n");
-
-    // Main loop - just monitor status
-    while (g_motor_control.run)
-    {
-        sleep(1);
-
-        // Print CAN status periodically
-        static int status_counter = 0;
-        if (status_counter++ % 5 == 0)
+        if (ethercat_init())
         {
-            print_can_status();
+            return true;
+        }
+
+        retry_count++;
+
+        if (retry_count >= MAX_ETHERCAT_RETRIES)
+        {
+            break;
+        }
+
+        for (int i = 0; i < ETHERCAT_RETRY_DELAY_SEC * 10 && g_motor_control.run; i++)
+        {
+            usleep(SLEEP_INTERVAL_US / 10);
         }
     }
 
-    // Wait for cyclic task to finish
+    return false;
+}
+
+static void cleanup_resources(void)
+{
+    ec_close();
+    stop_can_interface();
+    disable_raw_mode();
+}
+
+int main(void)
+{
+    if (!load_config("motor_config.ini"))
+    {
+        return EXIT_FAILURE;
+    }
+
+    /* Update motor control with config values */
+    g_motor_control.ifname = g_config.interface;
+    g_motor_control.cycletime = g_config.cycletime;
+    g_motor_control.num_motors = g_config.num_motors;
+
+    g_motor_control.slave_indices[LEFT_MOTOR] = 1;
+    g_motor_control.slave_indices[RIGHT_MOTOR] = 2;
+
+    if (setup_signal_handlers() != 0)
+    {
+        return EXIT_FAILURE;
+    }
+
+    enable_raw_mode();
+
+    if (!init_can_interface())
+    {
+        disable_raw_mode();
+        return EXIT_FAILURE;
+    }
+
+    if (!initialize_ethercat())
+    {
+        cleanup_resources();
+        return EXIT_FAILURE;
+    }
+
+    /* Configure operation mode to PVM */
+    for (int i = 0; i < g_motor_control.num_motors; i++)
+    {
+        g_motor_control.rxpdo[i]->op_mode = 3;  
+    }
+
+    if (pthread_create(&g_motor_control.cyclic_thread, NULL, motor_control_cyclic_task, NULL) != 0)
+    {
+        fprintf(stderr, "Failed to create cyclic task thread\n");
+        cleanup_resources();
+        return EXIT_FAILURE;
+    }
+
+    /* Main monitoring loop */
+    while (g_motor_control.run)
+    {
+        usleep(SLEEP_INTERVAL_US);
+        /* print_can_status(); */
+    }
+
     pthread_join(g_motor_control.cyclic_thread, NULL);
 
-    // Cleanup
-    ec_close();
-    stop_can_monitor();
-    disable_raw_mode();
+    cleanup_resources();
 
     printf("Program terminated successfully\n");
-    return 0;
+    return EXIT_SUCCESS;
 }
