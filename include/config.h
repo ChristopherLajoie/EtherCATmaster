@@ -33,30 +33,6 @@ typedef struct
     int cycletime;
     int num_motors;
 
-    /* Status word bits */
-    uint16_t sw_ready_to_switch_on_bit;
-    uint16_t sw_switched_on_bit;
-    uint16_t sw_operation_enabled_bit;
-    uint16_t sw_fault_bit;
-    uint16_t sw_voltage_enabled_bit;
-    uint16_t sw_quick_stop_bit;
-    uint16_t sw_switch_on_disabled_bit;
-    uint16_t sw_target_reached_bit;
-    uint16_t sw_no_communication;
-
-    /* Control word bits */
-    uint16_t new_velocity_setpoint;
-    uint16_t shutdown;
-    uint16_t switch_on;
-    uint16_t enable;
-    uint16_t disable_voltage;
-    uint16_t disable_operation;
-    uint16_t fault_reset;
-
-    /* PDO mapping parameters */
-    uint16_t rx_pdo_index;
-    uint16_t tx_pdo_index;
-
     /* Motion parameters */
     uint16_t max_torque;
     uint32_t max_velocity;

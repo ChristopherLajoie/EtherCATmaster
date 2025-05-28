@@ -14,7 +14,7 @@
 
 #define MAX_ETHERCAT_RETRIES 5
 #define ETHERCAT_RETRY_DELAY_SEC 3
-#define SLEEP_INTERVAL_US 100000
+#define SLEEP_INTERVAL_US 10000000
 
 MotorControl g_motor_control = {.ifname = "eth0",
                                 .cycletime = 4000,
@@ -119,10 +119,12 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    /* For simulation */
     enable_raw_mode();
 
     if (!init_can_interface())
     {
+        /* For simulation */
         disable_raw_mode();
         return EXIT_FAILURE;
     }

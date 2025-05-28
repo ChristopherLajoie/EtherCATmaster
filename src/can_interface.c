@@ -1,6 +1,3 @@
-//#ifdef __INTELLISENSE__
-//#define CAN_MODE_SIMULATOR
-//#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,458 +9,28 @@
 #include <termios.h>
 #include <sys/time.h>
 
-#ifndef CAN_MODE_SIMULATOR
 #include <net/if.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <poll.h>
-#endif
 
 #include "can_interface.h"
 
-// Global variables for CAN state
 CANVariables can_vars;
 static volatile int keep_running = 1;
 static pthread_t monitor_thread_id;
 
-// Timeouts and intervals
 #define MAX_DATA_AGE_MS 500
 #define CAN_POLL_INTERVAL_MS 50
 
-// CAN message IDs
 #define BUTTONS_ID 0x18A
 #define MOVES_ID 0x28A
 #define LED_ID 0x30A
 
-// Forward declarations for internal functions
 static void* can_monitor_thread(void* arg);
 static int is_data_stale(void);
-
-#ifdef CAN_MODE_SIMULATOR
-//==============================================================================
-// SIMULATOR IMPLEMENTATION
-//==============================================================================
-
-// Structure to hold simulated CAN data
-typedef struct
-{
-    uint8_t enable_button;
-    uint8_t speed_button;
-    uint8_t horn_button;
-    uint8_t can_enable_button;
-    uint8_t estop_button;
-    uint8_t x_axis;
-    uint8_t y_axis;
-
-    // For auto-spring back behavior
-    struct timeval last_x_press;
-    struct timeval last_y_press;
-    int x_direction;  // -1 = left, 0 = none, 1 = right
-    int y_direction;  // -1 = down, 0 = none, 1 = up
-
-    pthread_mutex_t mutex;           // Mutex for thread-safe access
-    int simulation_active;           // Flag to indicate if simulation is active
-    pthread_t keyboard_thread_id;    // Thread for keyboard input
-    pthread_t springback_thread_id;  // Thread for spring-back behavior
-} CANSimulator;
-
-static CANSimulator can_sim;
-static struct termios orig_termios;
-
-// Function prototypes for simulator
-static void sim_enable_raw_mode(void);
-static void sim_disable_raw_mode(void);
-static int sim_kbhit(void);
-static char sim_readch(void);
-static void print_simulator_status(void);
-static void* springback_thread(void* arg);
-static void* keyboard_input_thread(void* arg);
-
-// Set terminal to raw mode to read keystrokes without waiting for Enter
-static void sim_enable_raw_mode(void)
-{
-    tcgetattr(STDIN_FILENO, &orig_termios);
-    struct termios raw = orig_termios;
-    raw.c_lflag &= ~(ECHO | ICANON);  // Disable echo and canonical mode
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-
-    // Set stdin to non-blocking
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-}
-
-static void sim_disable_raw_mode(void)
-{
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
-
-    // Restore blocking mode
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
-}
-
-// Function to read keyboard without blocking
-static int sim_kbhit(void)
-{
-    char ch;
-    int nread = read(STDIN_FILENO, &ch, 1);
-    if (nread == 1)
-    {
-        ungetc(ch, stdin);
-        return 1;
-    }
-    return 0;
-}
-
-static char sim_readch(void)
-{
-    char ch;
-    read(STDIN_FILENO, &ch, 1);
-    return ch;
-}
-
-// Print current controller state
-static void print_simulator_status(void)
-{
-    pthread_mutex_lock(&can_sim.mutex);
-
-    printf("\033[2J\033[H");  // Clear screen and move cursor to top
-    printf("=== CAN SIMULATOR STATUS ===\n");
-    printf("Enable Button (1):    %s\n", can_sim.enable_button ? "ON" : "OFF");
-    printf("Speed Button (2):     %s\n", can_sim.speed_button ? "ON" : "OFF");
-    printf("Horn Button (3):      %s\n", can_sim.horn_button ? "ON" : "OFF");
-    printf("CAN Enable Button (4): %s\n", can_sim.can_enable_button ? "ON" : "OFF");
-    printf("Emergency Stop (5):   %s\n", can_sim.estop_button ? "ON" : "OFF");
-    printf("X-Axis:              %d\n", can_sim.x_axis);
-    printf("Y-Axis:              %d\n", can_sim.y_axis);
-    printf("\n=== KEYBOARD CONTROLS ===\n");
-    printf("1-5: Toggle buttons   6: Center joystick\n");
-    printf("Arrow Keys: Control Joystick (auto-centers after release)\n");
-    printf("P: Show this status\n");
-
-    pthread_mutex_unlock(&can_sim.mutex);
-}
-
-// Joystick spring-back thread function
-static void* springback_thread(void* arg)
-{
-    (void)arg;  // Unused parameter
-
-    struct timeval now;
-    long diff_ms_x, diff_ms_y;
-    const int SPRING_TIMEOUT_MS = 200;  // Time without keypresses to trigger spring-back
-    const int SPRING_STEP = 10;         // How quickly to return to center
-
-    while (keep_running)
-    {
-        pthread_mutex_lock(&can_sim.mutex);
-
-        gettimeofday(&now, NULL);
-
-        // Calculate time since last X press
-        diff_ms_x = ((now.tv_sec - can_sim.last_x_press.tv_sec) * 1000) + ((now.tv_usec - can_sim.last_x_press.tv_usec) / 1000);
-
-        // Calculate time since last Y press
-        diff_ms_y = ((now.tv_sec - can_sim.last_y_press.tv_sec) * 1000) + ((now.tv_usec - can_sim.last_y_press.tv_usec) / 1000);
-
-        // Spring back X-axis
-        if (diff_ms_x > SPRING_TIMEOUT_MS && can_sim.x_axis != 128)
-        {
-            if (can_sim.x_axis < 128)
-            {
-                can_sim.x_axis += SPRING_STEP;
-                if (can_sim.x_axis > 128)
-                    can_sim.x_axis = 128;
-            }
-            else
-            {
-                can_sim.x_axis -= SPRING_STEP;
-                if (can_sim.x_axis < 128)
-                    can_sim.x_axis = 128;
-            }
-            can_sim.x_direction = 0;  // Reset direction once centered
-        }
-
-        // Spring back Y-axis
-        if (diff_ms_y > SPRING_TIMEOUT_MS && can_sim.y_axis != 128)
-        {
-            if (can_sim.y_axis < 128)
-            {
-                can_sim.y_axis += SPRING_STEP;
-                if (can_sim.y_axis > 128)
-                    can_sim.y_axis = 128;
-            }
-            else
-            {
-                can_sim.y_axis -= SPRING_STEP;
-                if (can_sim.y_axis < 128)
-                    can_sim.y_axis = 128;
-            }
-            can_sim.y_direction = 0;  // Reset direction once centered
-        }
-
-        pthread_mutex_unlock(&can_sim.mutex);
-
-        // Sleep to reduce CPU usage
-        usleep(50000);  // 50ms
-    }
-
-    return NULL;
-}
-
-// Keyboard input thread for simulation control
-static void* keyboard_input_thread(void* arg)
-{
-    (void)arg;  // Unused
-
-    sim_enable_raw_mode();
-
-    // Initialize last press time
-    gettimeofday(&can_sim.last_x_press, NULL);
-    gettimeofday(&can_sim.last_y_press, NULL);
-
-    while (keep_running)
-    {
-        if (sim_kbhit())
-        {
-            char c = sim_readch();
-
-            pthread_mutex_lock(&can_sim.mutex);
-
-            switch (c)
-            {
-                case '1':  // Toggle Enable button
-                    can_sim.enable_button = !can_sim.enable_button;
-                    printf("Enable button: %s\n", can_sim.enable_button ? "ON" : "OFF");
-                    break;
-
-                case '2':  // Toggle Speed button
-                    can_sim.speed_button = !can_sim.speed_button;
-                    printf("Speed button: %s\n", can_sim.speed_button ? "ON" : "OFF");
-                    break;
-
-                case '3':  // Toggle Horn button
-                    can_sim.horn_button = !can_sim.horn_button;
-                    printf("Horn button: %s\n", can_sim.horn_button ? "ON" : "OFF");
-                    break;
-
-                case '4':  // Toggle CAN Enable button
-                    can_sim.can_enable_button = !can_sim.can_enable_button;
-                    printf("CAN Enable button: %s\n", can_sim.can_enable_button ? "ON" : "OFF");
-                    break;
-
-                case '5':  // Toggle Emergency stop
-                    can_sim.estop_button = !can_sim.estop_button;
-                    printf("Emergency Stop: %s\n", can_sim.estop_button ? "ON" : "OFF");
-                    break;
-
-                case '6':  // Center joystick
-                    can_sim.x_axis = 128;
-                    can_sim.y_axis = 128;
-                    printf("Joystick centered\n");
-                    break;
-
-                case 27:  // Arrow keys (ESC [ A/B/C/D sequence)
-                    if (sim_readch() == '[')
-                    {
-                        char dir = sim_readch();
-
-                        switch (dir)
-                        {
-                            case 'A':  // Up - Increase Y axis (forward)
-                                can_sim.y_axis = (can_sim.y_axis <= 235) ? can_sim.y_axis + 20 : 255;
-                                can_sim.y_direction = 1;
-                                gettimeofday(&can_sim.last_y_press, NULL);
-                                break;
-
-                            case 'B':  // Down - Decrease Y axis (backward)
-                                can_sim.y_axis = (can_sim.y_axis >= 20) ? can_sim.y_axis - 20 : 0;
-                                can_sim.y_direction = -1;
-                                gettimeofday(&can_sim.last_y_press, NULL);
-                                break;
-
-                            case 'C':  // Right - Increase X axis
-                                can_sim.x_axis = (can_sim.x_axis <= 235) ? can_sim.x_axis + 20 : 255;
-                                can_sim.x_direction = 1;
-                                gettimeofday(&can_sim.last_x_press, NULL);
-                                break;
-
-                            case 'D':  // Left - Decrease X axis
-                                can_sim.x_axis = (can_sim.x_axis >= 20) ? can_sim.x_axis - 20 : 0;
-                                can_sim.x_direction = -1;
-                                gettimeofday(&can_sim.last_x_press, NULL);
-                                break;
-                        }
-                    }
-                    break;
-
-                case 'p':  // Print status
-                case 'P':
-                    pthread_mutex_unlock(&can_sim.mutex);
-                    print_simulator_status();
-                    pthread_mutex_lock(&can_sim.mutex);
-                    break;
-            }
-
-            pthread_mutex_unlock(&can_sim.mutex);
-        }
-
-        // Sleep to avoid excessive CPU usage
-        usleep(50000);  // 50ms
-    }
-
-    sim_disable_raw_mode();
-    return NULL;
-}
-
-// Simulator implementation of CAN functions
-int initialize_can_bus(const char* interface)
-{
-    printf("Initializing simulated CAN bus on interface: %s\n", interface);
-
-    // Initialize the simulator data structure
-    memset(&can_sim, 0, sizeof(CANSimulator));
-    pthread_mutex_init(&can_sim.mutex, NULL);
-
-    // Set default values
-    can_sim.enable_button = 1;  // Default to enabled
-    can_sim.speed_button = 0;
-    can_sim.horn_button = 0;
-    can_sim.can_enable_button = 1;
-    can_sim.estop_button = 1;  // Set to 1 to work with the motor_control.c logic
-    can_sim.x_axis = 128;      // Center position
-    can_sim.y_axis = 128;      // Center position
-
-    // Initialize spring-back tracking
-    gettimeofday(&can_sim.last_x_press, NULL);
-    gettimeofday(&can_sim.last_y_press, NULL);
-    can_sim.x_direction = 0;
-    can_sim.y_direction = 0;
-
-    // Create keyboard input thread
-    keep_running = 1;
-    if (pthread_create(&can_sim.keyboard_thread_id, NULL, keyboard_input_thread, NULL) != 0)
-    {
-        printf("Failed to create keyboard input thread\n");
-        pthread_mutex_destroy(&can_sim.mutex);
-        return 0;
-    }
-
-    // Create spring-back thread
-    if (pthread_create(&can_sim.springback_thread_id, NULL, springback_thread, NULL) != 0)
-    {
-        printf("Failed to create springback thread\n");
-        pthread_cancel(can_sim.keyboard_thread_id);
-        pthread_join(can_sim.keyboard_thread_id, NULL);
-        pthread_mutex_destroy(&can_sim.mutex);
-        return 0;
-    }
-
-    can_sim.simulation_active = 1;
-
-    return 1;
-}
-
-void shutdown_can_bus(void)
-{
-    if (!can_sim.simulation_active)
-    {
-        return;
-    }
-
-    printf("Shutting down simulated CAN bus\n");
-
-    keep_running = 0;
-    usleep(300000);  // 300ms wait
-
-    pthread_cancel(can_sim.keyboard_thread_id);
-    pthread_join(can_sim.keyboard_thread_id, NULL);
-
-    pthread_cancel(can_sim.springback_thread_id);
-    pthread_join(can_sim.springback_thread_id, NULL);
-
-    pthread_mutex_destroy(&can_sim.mutex);
-    can_sim.simulation_active = 0;
-}
-
-int send_can_message(int can_id, uint8_t* data, int data_length)
-{
-    (void)can_id;       // Prevent unused parameter warning
-    (void)data;         // Prevent unused parameter warning
-    (void)data_length;  // Prevent unused parameter warning
-    return 1;
-}
-
-int receive_can_message(int can_id, uint8_t* data, int* data_length, int timeout_ms)
-{
-    (void)can_id;      // Prevent unused parameter warning
-    (void)timeout_ms;  // Prevent unused parameter warning
-
-    memset(data, 0, 8);
-    *data_length = 8;
-    return 1;
-}
-
-// Button and axis getter functions for simulator
-int get_enable_button(void)
-{
-    int result;
-    pthread_mutex_lock(&can_sim.mutex);
-    result = can_sim.enable_button;
-    pthread_mutex_unlock(&can_sim.mutex);
-    return result;
-}
-
-int get_speed_button(void)
-{
-    int result;
-    pthread_mutex_lock(&can_sim.mutex);
-    result = can_sim.speed_button;
-    pthread_mutex_unlock(&can_sim.mutex);
-    return result;
-}
-
-int get_horn_button(void)
-{
-    int result;
-    pthread_mutex_lock(&can_sim.mutex);
-    result = can_sim.horn_button;
-    pthread_mutex_unlock(&can_sim.mutex);
-    return result;
-}
-
-int get_estop_button(void)
-{
-    int result;
-    pthread_mutex_lock(&can_sim.mutex);
-    result = can_sim.estop_button;
-    pthread_mutex_unlock(&can_sim.mutex);
-    return result;
-}
-
-int get_y_axis(void)
-{
-    int result;
-    pthread_mutex_lock(&can_sim.mutex);
-    result = can_sim.y_axis;
-    pthread_mutex_unlock(&can_sim.mutex);
-    return result;
-}
-
-int get_x_axis(void)
-{
-    int result;
-    pthread_mutex_lock(&can_sim.mutex);
-    result = can_sim.x_axis;
-    pthread_mutex_unlock(&can_sim.mutex);
-    return result;
-}
-
-#else
-//==============================================================================
-// REAL HARDWARE IMPLEMENTATION
-//==============================================================================
 
 static int can_socket = -1;
 
@@ -669,12 +236,6 @@ int get_x_axis(void)
     return -1;
 }
 
-#endif
-
-//==============================================================================
-// COMMON IMPLEMENTATION (WORKS WITH BOTH REAL AND SIMULATED CAN)
-//==============================================================================
-
 static int is_data_stale(void)
 {
     struct timespec now, diff;
@@ -775,20 +336,11 @@ int init_can_interface(void)
     clock_gettime(CLOCK_MONOTONIC, &can_vars.last_update);
     can_vars.monitoring_active = 0;
 
-    // Initialize CAN bus
-#ifdef CAN_MODE_SIMULATOR
-    if (!initialize_can_bus("sim0"))
-    {
-        printf("Failed to initialize simulated CAN bus\n");
-        return 0;
-    }
-#else
     if (!initialize_can_bus("can0"))
     {
         printf("Failed to initialize CAN bus\n");
         return 0;
     }
-#endif
 
     keep_running = 1;
 

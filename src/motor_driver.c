@@ -424,7 +424,7 @@ void* motor_control_cyclic_task(void* arg)
                         {
                             if (!estop)
                             {
-                                g_motor_state[motor].target_velocity = 0;
+                                rxpdo[motor]->target_velocity = 0;
                             }
 
                             else if (enable)
@@ -440,7 +440,7 @@ void* motor_control_cyclic_task(void* arg)
                             }
                             else
                             {
-                                rxpdo[motor]->target_velocity = 0;
+                                g_motor_state[motor].target_velocity = 0;
                             }
 
                             if (g_motor_state[motor].target_velocity != g_motor_state[motor].current_velocity)

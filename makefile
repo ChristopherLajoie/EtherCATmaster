@@ -1,7 +1,5 @@
-# Makefile for Motor Control Application
-
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -g
+CFLAGS = -Wall -Wextra -O2 -g -DCAN_MODE_REAL
 LDFLAGS = -lm -lrt -lpthread
 
 # Build directory
@@ -62,14 +60,13 @@ TARGET = motor_control
 # Make options to reduce verbosity
 MAKEFLAGS += --no-print-directory
 
-all: create_build_dirs $(TARGET)
+all: 
+	@$(MAKE) clean
+	@$(MAKE) create_build_dirs $(TARGET)
 	@echo ""
-	@echo "================================================================"
-	@echo "  Build complete! The program is set to use simulated CAN."
-	@echo "  To explicitly choose mode, use:"
-	@echo "    make sim  - Use simulated CAN controller"
-	@echo "    make real - Use real CAN hardware"
-	@echo "================================================================"
+	@echo "==================="
+	@echo "  Build complete!  "
+	@echo "==================="
 	@echo ""
 
 # Create build directories
@@ -121,30 +118,6 @@ clean:
 	@rm -rf $(BUILD_DIR)
 	@rm -f $(TARGET)
 
-# Targets for explicitly choosing real or simulated CAN
-real: 
-	@echo "Building with REAL CAN hardware..."
-	@$(MAKE) clean
-	@$(MAKE) CAN_MODE=REAL create_build_dirs $(TARGET)
-	@echo ""
-	@echo "=========================================================="
-	@echo "  Build complete! Using REAL CAN hardware."
-	@echo "=========================================================="
-	@echo ""
+real: all
 
-sim:
-	@echo "Building with SIMULATED CAN..."
-	@$(MAKE) clean
-	@$(MAKE) CAN_MODE=SIMULATOR create_build_dirs $(TARGET)
-	@echo ""
-	@echo "====================================================="
-	@echo "  Build complete! Using SIMULATED CAN."
-	@echo "====================================================="
-	@echo ""
-
-# Define CAN mode for build
-ifneq ($(CAN_MODE),)
-    CFLAGS += -DCAN_MODE_$(CAN_MODE)
-endif
-
-.PHONY: all clean soem inih create_build_dirs real sim
+.PHONY: all clean soem inih create_build_dirs real

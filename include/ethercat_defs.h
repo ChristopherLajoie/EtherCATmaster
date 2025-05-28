@@ -7,28 +7,28 @@
 #include "ethercatconfig.h"
 #include "hardware_io.h"
 
-#define RX_PDO_INDEX g_config.rx_pdo_index
-#define TX_PDO_INDEX g_config.tx_pdo_index
+#define RX_PDO_INDEX 0x1600
+#define TX_PDO_INDEX 0x1A00
 
 /* Macro accessors for runtime config */
-#define SW_READY_TO_SWITCH_ON_BIT g_config.sw_ready_to_switch_on_bit
-#define SW_SWITCHED_ON_BIT g_config.sw_switched_on_bit
-#define SW_OPERATION_ENABLED_BIT g_config.sw_operation_enabled_bit
-#define SW_FAULT_BIT g_config.sw_fault_bit
-#define SW_VOLTAGE_ENABLED_BIT g_config.sw_voltage_enabled_bit
-#define SW_QUICK_STOP_BIT g_config.sw_quick_stop_bit
-#define SW_SWITCH_ON_DISABLED_BIT g_config.sw_switch_on_disabled_bit
-#define SW_TARGET_REACHED_BIT g_config.sw_target_reached_bit
-#define SW_NO_COMMUNICATION g_config.sw_no_communication
+#define SW_READY_TO_SWITCH_ON_BIT 0x0001
+#define SW_SWITCHED_ON_BIT 0x0002
+#define SW_OPERATION_ENABLED_BIT 0x0004
+#define SW_FAULT_BIT 0x0008
+#define SW_VOLTAGE_ENABLED_BIT 0x0010
+#define SW_QUICK_STOP_BIT 0x0020
+#define SW_SWITCH_ON_DISABLED_BIT 0x0040
+#define SW_TARGET_REACHED_BIT 0x0400
+#define SW_NO_COMMUNICATION 0x0000
 
 /* Control word macros */
-#define CW_NEW_VELOCITY_SETPOINT g_config.new_velocity_setpoint
-#define CW_SHUTDOWN g_config.shutdown
-#define CW_SWITCHON g_config.switch_on
-#define CW_ENABLE g_config.enable
-#define CW_DISABLEVOLTAGE g_config.disable_voltage
-#define CW_DISABLEOPERATION g_config.disable_operation
-#define CW_FAULT_RESET g_config.fault_reset
+#define CW_NEW_VELOCITY_SETPOINT 0x0010
+#define CW_SHUTDOWN 0x0006
+#define CW_SWITCHON 0x0007
+#define CW_ENABLE 0x000F
+#define CW_DISABLEVOLTAGE 0x0000
+#define CW_DISABLEOPERATION 0x0007
+#define CW_FAULT_RESET 0x0080
 
 /* Motion parameter macros */
 #define MAX_TORQUE convert_to_raw(g_config.max_torque)
