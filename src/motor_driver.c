@@ -55,13 +55,70 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
 {
     differential_velocities_t result = {0, 0};
 
-    int32_t forward_velocity = map_joystick_to_velocity(y_axis, speed_mode);
-    int32_t turn_velocity = map_joystick_to_velocity(x_axis, speed_mode);
+    int32_t max_vel = speed_mode ? (MAX_VELOCITY * 0.9f) : (MAX_VELOCITY / 2);
+    float speedFactor = speed_mode ? 1.0f : 2.0f;
 
-    turn_velocity = (int32_t)(turn_velocity * g_config.turn_factor);
+    float x_norm = 2.0f * (float)(x_axis - JOYSTICK_MIN) / (JOYSTICK_MAX - JOYSTICK_MIN) - 1.0f;
+    float y_norm = 2.0f * (float)(y_axis - JOYSTICK_MIN) / (JOYSTICK_MAX - JOYSTICK_MIN) - 1.0f;
 
-    result.left_velocity = forward_velocity + turn_velocity;
-    result.right_velocity = forward_velocity - turn_velocity;
+    int deadzone_threshold = JOYSTICK_DEADZONE;
+    if (abs(x_axis - JOYSTICK_CENTER) < deadzone_threshold)
+        x_norm = 0.0f;
+    if (abs(y_axis - JOYSTICK_CENTER) < deadzone_threshold)
+        y_norm = 0.0f;
+
+    int32_t left_vel = 0;
+    int32_t right_vel = 0;
+
+    int32_t turn_component = (int32_t)(x_norm * max_vel / speedFactor);
+
+    if (y_norm >= 0.1f)
+    {
+        int32_t forward_component = (int32_t)(y_norm * max_vel / speedFactor);
+
+        if (x_norm <= 0.0f)
+        {
+            right_vel = forward_component;
+            left_vel = right_vel + turn_component;
+        }
+        else
+        {
+            left_vel = forward_component;
+            right_vel = left_vel - turn_component;
+        }
+    }
+    else if (y_norm <= -0.1f)
+    {
+        int32_t backward_component = (int32_t)(y_norm * max_vel / speedFactor);
+
+        if (x_norm <= 0.0f)
+        {
+            right_vel = backward_component;
+            left_vel = right_vel - turn_component;
+        }
+        else
+        {
+            left_vel = backward_component;
+            right_vel = left_vel + turn_component;
+        }
+    }
+    else
+    {
+        left_vel = turn_component;
+        right_vel = -turn_component;
+    }
+
+    if (left_vel > max_vel)
+        left_vel = max_vel;
+    if (left_vel < -max_vel)
+        left_vel = -max_vel;
+    if (right_vel > max_vel)
+        right_vel = max_vel;
+    if (right_vel < -max_vel)
+        right_vel = -max_vel;
+
+    result.left_velocity = left_vel;
+    result.right_velocity = right_vel;
 
     if (g_config.reverse_left_motor)
     {
@@ -71,15 +128,6 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
     {
         result.right_velocity = -result.right_velocity;
     }
-
-    if (result.left_velocity > max_vel)
-        result.left_velocity = max_vel;
-    if (result.left_velocity < -max_vel)
-        result.left_velocity = -max_vel;
-    if (result.right_velocity > max_vel)
-        result.right_velocity = max_vel;
-    if (result.right_velocity < -max_vel)
-        result.right_velocity = -max_vel;
 
     return result;
 }
