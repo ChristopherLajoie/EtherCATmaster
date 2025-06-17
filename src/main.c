@@ -11,6 +11,7 @@
 #include "can_interface.h"
 #include "motor_driver.h"
 #include "config.h"
+#include "data_logger.h"
 
 #define MAX_ETHERCAT_RETRIES 5
 #define ETHERCAT_RETRY_DELAY_SEC 3
@@ -94,6 +95,7 @@ static bool initialize_ethercat(void)
 
 static void cleanup_resources(void)
 {
+    cleanup_data_logger();  
     ec_close();
     stop_can_interface();
     disable_raw_mode();
@@ -135,6 +137,12 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    if (!init_data_logger())
+    {
+        fprintf(stderr, "Warning: Data logging initialization failed\n");
+        // Continue execution - logging is optional
+    }
+    
     /* Configure operation mode to PVM */
     for (int i = 0; i < g_motor_control.num_motors; i++)
     {

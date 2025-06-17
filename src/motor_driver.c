@@ -10,6 +10,7 @@
 
 #include "motor_driver.h"
 #include "hardware_io.h"
+#include "data_logger.h"
 #include <time.h>
 #include <signal.h>
 
@@ -136,14 +137,33 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
 {
     if (g_motor_control.num_motors >= 2)
     {
+        // Get actual velocities and torques
+        int32_t left_actual = txpdo[LEFT_MOTOR]->velocity_actual;
+        int32_t right_actual = txpdo[RIGHT_MOTOR]->velocity_actual;
         int32_t left_torque = convert_to_mNm(txpdo[LEFT_MOTOR]->torque_actual);
         int32_t right_torque = convert_to_mNm(txpdo[RIGHT_MOTOR]->torque_actual);
+        
+        // Get target velocities from the differential calculation
+        int32_t left_target = velocities.left_velocity;
+        int32_t right_target = velocities.right_velocity;
+        
+        // Apply reverse correction for display - show logical robot direction
+        if (g_config.reverse_left_motor) {
+            left_actual = -left_actual;
+            left_target = -left_target;
+            left_torque = -left_torque;
+        }
+        if (g_config.reverse_right_motor) {
+            right_actual = -right_actual;
+            right_target = -right_target;
+            right_torque = -right_torque;
+        }
 
         printf("L:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm\n",
-               txpdo[LEFT_MOTOR]->velocity_actual,
-               rxpdo[LEFT_MOTOR]->target_velocity,
-               txpdo[RIGHT_MOTOR]->velocity_actual,
-               rxpdo[RIGHT_MOTOR]->target_velocity,
+               left_actual,
+               left_target,
+               right_actual,
+               right_target,
                left_torque,
                right_torque);
 
@@ -158,11 +178,20 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
     }
     else if (g_motor_control.num_motors == 1)
     {
+        int32_t actual = txpdo[0]->velocity_actual;
+        int32_t target = rxpdo[0]->target_velocity;
         int32_t torque = convert_to_mNm(txpdo[0]->torque_actual);
+        
+        // Apply reverse correction for single motor (if it's configured as left motor with reversal)
+        if (g_config.reverse_left_motor) {
+            actual = -actual;
+            target = -target;
+            torque = -torque;
+        }
 
         printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Differential Test: L=%4d R=%4d rpm\n",
-               txpdo[0]->velocity_actual,
-               rxpdo[0]->target_velocity,
+               actual,
+               target,
                torque,
                velocities.left_velocity,
                velocities.right_velocity);
@@ -515,9 +544,10 @@ void* motor_control_cyclic_task(void* arg)
             }
 
             static int log_interval = 0;
-            if (++log_interval >= 250)
+            if (++log_interval >= g_config.log_interval_cycles)  
             {
                 log_motor_status(rxpdo, txpdo, velocities);
+                log_motor_data(rxpdo, txpdo, g_motor_control.num_motors);
                 log_interval = 0;
             }
         }
