@@ -50,10 +50,17 @@ typedef struct
     float turn_factor;
     int reverse_left_motor;
     int reverse_right_motor;
+
+    // Logging parameters
+    int enable_logging;
+    char log_file_path[256];
+    int log_interval_ms;
+    int log_interval_cycles;  // Calculated from log_interval_ms and cycletime
 } MotorConfig;
 
 extern MotorConfig g_config;
 
 bool load_config(const char* filename);
+void calculate_derived_config_values(void);
 
 #endif
