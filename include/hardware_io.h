@@ -4,6 +4,13 @@
 #include <termios.h>
 #include "common.h"
 
+typedef struct {
+    uint8_t motor_i2t_percent;
+    float drive_temp_celsius;
+    float core_temp_celsius;
+    bool data_valid;
+} thermal_data_t;
+
 typedef struct
 {
     uint16_t code;
@@ -43,5 +50,6 @@ const char* get_cia402_state_string(uint16_t state);
 uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const char* description, const char* unit);
 int convert_to_mNm(int16_t raw_torque);
 int convert_to_raw(int16_t torque);
+bool read_thermal_data(int slave, thermal_data_t* thermal_data);
 
 #endif

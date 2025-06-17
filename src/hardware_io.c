@@ -87,6 +87,45 @@ uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const
     return value;
 }
 
+/**
+ * @brief Read thermal monitoring data via SDO
+ */
+bool read_thermal_data(int slave, thermal_data_t* thermal_data)
+{
+    int ret;
+    int size;
+    uint32_t temp_value;
+    
+    // Read Motor thermal utilisation (I²t) - 0x200A:3
+    size = sizeof(uint8_t);
+    ret = ec_SDOread(slave, 0x200A, 3, FALSE, &size, &thermal_data->motor_i2t_percent, EC_TIMEOUTRXM);
+    if (ret <= 0) {
+        thermal_data->data_valid = false;
+        return false;
+    }
+    
+    // Read Drive-module temperature - 0x2031:1 (in m°C)
+    size = sizeof(uint32_t);
+    ret = ec_SDOread(slave, 0x2031, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
+    if (ret <= 0) {
+        thermal_data->data_valid = false;
+        return false;
+    }
+    thermal_data->drive_temp_celsius = (int32_t)temp_value / 1000.0f;
+    
+    // Read Core-board temperature - 0x2030:1 (in m°C)
+    size = sizeof(uint32_t);
+    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
+    if (ret <= 0) {
+        thermal_data->data_valid = false;
+        return false;
+    }
+    thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
+    
+    thermal_data->data_valid = true;
+    return true;
+}
+
 static bool configure_rxpdo_mappings(int slave)
 {
     int ret;
