@@ -550,6 +550,8 @@ void* motor_control_cyclic_task(void* arg)
                 log_motor_data(rxpdo, txpdo, g_motor_control.num_motors);
                 log_interval = 0;
             }
+
+            broadcast_motor_data(rxpdo, txpdo, g_motor_control.num_motors);
         }
         else
         {

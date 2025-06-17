@@ -50,7 +50,8 @@ APP_OBJ = $(BUILD_SRC_DIR)/main.o \
           $(BUILD_SRC_DIR)/motor_driver.o \
           $(BUILD_SRC_DIR)/can_interface.o \
           $(BUILD_SRC_DIR)/config.o \
-          $(BUILD_SRC_DIR)/data_logger.o
+          $(BUILD_SRC_DIR)/data_logger.o \
+          $(BUILD_SRC_DIR)/realtime_broadcaster.o
 
 # All object files
 OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(INIH_OBJ) $(APP_OBJ)

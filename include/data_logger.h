@@ -11,6 +11,7 @@
 
 #include "common.h"
 #include "motor_types.h"
+#include <stdio.h>  
 
 typedef struct {
     bool logging_enabled;
