@@ -103,7 +103,7 @@ bool init_data_logger(void)
     printf("Data logging initialized: %s\n", filename);
     
     // Write CSV header
-    write_csv_header(g_motor_control.num_motors);
+    write_csv_header();
     
     return true;
 }
@@ -118,7 +118,7 @@ void cleanup_data_logger(void)
     g_data_logger.logging_enabled = false;
 }
 
-void write_csv_header(int num_motors)
+void write_csv_header(void)
 {
     if (!g_data_logger.log_file) return;
 
@@ -127,7 +127,7 @@ void write_csv_header(int num_motors)
     fflush(g_data_logger.log_file);
 }
 
-void log_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors)
+void log_motor_data(txpdo_t* txpdo[], int num_motors)
 {
     if (!g_data_logger.logging_enabled || !g_data_logger.log_file) {
         return;

@@ -547,11 +547,11 @@ void* motor_control_cyclic_task(void* arg)
             if (++log_interval >= g_config.log_interval_cycles)  
             {
                 log_motor_status(rxpdo, txpdo, velocities);
-                log_motor_data(rxpdo, txpdo, g_motor_control.num_motors);
+                log_motor_data(txpdo, g_motor_control.num_motors);
                 log_interval = 0;
             }
 
-            broadcast_motor_data(rxpdo, txpdo, g_motor_control.num_motors);
+            broadcast_motor_data(txpdo, g_motor_control.num_motors);
         }
         else
         {

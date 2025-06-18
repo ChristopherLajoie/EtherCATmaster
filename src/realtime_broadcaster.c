@@ -43,6 +43,7 @@ bool init_realtime_broadcaster(void)
 
     // Set up broadcast parameters
     strncpy(g_broadcaster.broadcast_ip, g_config.hmi_broadcast_ip, sizeof(g_broadcaster.broadcast_ip) - 1);
+    g_broadcaster.broadcast_ip[sizeof(g_broadcaster.broadcast_ip) - 1] = '\0'; 
     g_broadcaster.broadcast_port = g_config.hmi_broadcast_port;
     
     // Debug the data types and values
@@ -100,7 +101,7 @@ void cleanup_realtime_broadcaster(void)
     g_broadcaster.enabled = false;
 }
 
-void broadcast_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors)
+void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
 {
     if (!g_broadcaster.enabled) {
         return;

@@ -11,6 +11,7 @@
 #include "can_interface.h"
 #include "motor_driver.h"
 #include "config.h"
+#include "realtime_broadcaster.h"
 #include "data_logger.h"
 
 #define MAX_ETHERCAT_RETRIES 5

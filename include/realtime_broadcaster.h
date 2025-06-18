@@ -38,6 +38,6 @@ void cleanup_realtime_broadcaster(void);
  * @param txpdo Array of TxPDO pointers  
  * @param num_motors Number of motors
  */
-void broadcast_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors);
+void broadcast_motor_data(txpdo_t* txpdo[], int num_motors);
 
 #endif

@@ -38,12 +38,12 @@ void cleanup_data_logger(void);
  * @param txpdo Array of TxPDO pointers
  * @param num_motors Number of motors to log
  */
-void log_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors);
+void log_motor_data(txpdo_t* txpdo[], int num_motors);
 
 /**
  * @brief Create CSV header based on number of motors
  * @param num_motors Number of motors
  */
-void write_csv_header(int num_motors);
+void write_csv_header(void);
 
 #endif
