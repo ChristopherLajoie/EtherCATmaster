@@ -109,13 +109,6 @@ void broadcast_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors)
     // Check if it's time to broadcast
     g_broadcaster.cycle_counter++;
     
-    // Add debug every 100 calls to see if function is being called
-    static int debug_counter = 0;
-    if (++debug_counter % 1000 == 0) {
-        printf("Broadcast function called %d times, counter: %d/%d\n", 
-               debug_counter, g_broadcaster.cycle_counter, g_broadcaster.broadcast_interval_cycles);
-    }
-    
     if (g_broadcaster.cycle_counter < g_broadcaster.broadcast_interval_cycles) {
         return;
     }
