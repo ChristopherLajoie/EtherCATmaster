@@ -135,6 +135,16 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
 
 void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocities_t velocities)
 {
+    // Read thermal data to get current calculations
+    static thermal_data_t thermal_data[MAX_MOTORS] = {0};
+    for (int motor = 0; motor < g_motor_control.num_motors; motor++) {
+        int slave_index = g_motor_control.slave_indices[motor];
+        if (!read_thermal_data(slave_index, &thermal_data[motor])) {
+            thermal_data[motor].data_valid = false;
+            thermal_data[motor].current_actual_A = 0.0f;
+        }
+    }
+
     if (g_motor_control.num_motors >= 2)
     {
         // Get actual velocities and torques
@@ -159,13 +169,19 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             right_torque = -right_torque;
         }
 
-        printf("L:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm\n",
+        // Calculate current from torque
+        calculate_current_from_torque(&thermal_data[LEFT_MOTOR], left_torque);
+        calculate_current_from_torque(&thermal_data[RIGHT_MOTOR], right_torque);
+
+        printf("L:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm| Current: L=%.2f R=%.2f A\n",
                left_actual,
                left_target,
                right_actual,
                right_target,
                left_torque,
-               right_torque);
+               right_torque,
+               thermal_data[LEFT_MOTOR].current_actual_A,
+               thermal_data[RIGHT_MOTOR].current_actual_A);
 
         for (int motor = 0; motor < 2; motor++)
         {
@@ -173,7 +189,11 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             const char* state_string = get_cia402_state_string(current_state);
             const char* motor_name = (motor == LEFT_MOTOR) ? "Left " : "Right";
 
-            printf("  %s - Status: %-20s\n", motor_name, state_string);
+            printf("  %s - Status: %-20s", motor_name, state_string);
+            if (thermal_data[motor].torque_constant_valid) {
+                printf(" | TorqueConst: %.3f mNm/A", thermal_data[motor].torque_constant_mNm_per_A);
+            }
+            printf("\n");
         }
     }
     else if (g_motor_control.num_motors == 1)
@@ -189,16 +209,24 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             torque = -torque;
         }
 
-        printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Differential Test: L=%4d R=%4d rpm\n",
+        // Calculate current from torque
+        calculate_current_from_torque(&thermal_data[0], torque);
+
+        printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Current: %.2f A | Differential Test: L=%4d R=%4d rpm\n",
                actual,
                target,
                torque,
+               thermal_data[0].current_actual_A,
                velocities.left_velocity,
                velocities.right_velocity);
 
         uint16_t current_state = get_cia402_state(txpdo[0]->statusword);
         const char* state_string = get_cia402_state_string(current_state);
-        printf("Status: %-20s\n", state_string);
+        printf("Status: %-20s", state_string);
+        if (thermal_data[0].torque_constant_valid) {
+            printf(" | TorqueConst: %.3f mNm/A", thermal_data[0].torque_constant_mNm_per_A);
+        }
+        printf("\n");
     }
 
     printf("\n");

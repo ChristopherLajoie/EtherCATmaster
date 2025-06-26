@@ -145,7 +145,7 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
              timestamp, ts.tv_nsec / 1000000);
 
     // Build JSON message
-    char json_buffer[1024];
+    char json_buffer[1536];  // Increased buffer size for current data
     
     if (num_motors == 1) {
         // Single motor
@@ -158,17 +158,22 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
             torque = -torque;
         }
         
+        // Calculate current from torque
+        calculate_current_from_torque(&thermal_data[0], torque);
+        
         snprintf(json_buffer, sizeof(json_buffer),
             "{"
             "\"timestamp\":\"%s\","
-            "\"motor\":{\"velocity\":%d,\"torque\":%d},"
-            "\"thermal\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f,\"valid\":%s}"
+            "\"motor\":{\"velocity\":%d,\"torque\":%d,\"current\":%.3f},"
+            "\"thermal\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f,\"valid\":%s},"
+            "\"torque_constant\":%.3f"
             "}",
-            full_timestamp, velocity, torque,
+            full_timestamp, velocity, torque, thermal_data[0].current_actual_A,
             thermal_data[0].motor_i2t_percent,
             thermal_data[0].drive_temp_celsius,
             thermal_data[0].core_temp_celsius,
-            thermal_data[0].data_valid ? "true" : "false");
+            thermal_data[0].data_valid ? "true" : "false",
+            thermal_data[0].torque_constant_mNm_per_A);
             
     } else if (num_motors >= 2) {
         // Dual motor
@@ -187,26 +192,37 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
             right_torque = -right_torque;
         }
         
+        // Calculate current from torque for both motors
+        calculate_current_from_torque(&thermal_data[LEFT_MOTOR], left_torque);
+        calculate_current_from_torque(&thermal_data[RIGHT_MOTOR], right_torque);
+        
         snprintf(json_buffer, sizeof(json_buffer),
             "{"
             "\"timestamp\":\"%s\","
-            "\"left_motor\":{\"velocity\":%d,\"torque\":%d},"
-            "\"right_motor\":{\"velocity\":%d,\"torque\":%d},"
+            "\"left_motor\":{\"velocity\":%d,\"torque\":%d,\"current\":%.3f},"
+            "\"right_motor\":{\"velocity\":%d,\"torque\":%d,\"current\":%.3f},"
             "\"thermal\":{"
                 "\"left\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f},"
                 "\"right\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f},"
                 "\"valid\":%s"
+            "},"
+            "\"torque_constants\":{"
+                "\"left\":%.3f,"
+                "\"right\":%.3f"
             "}"
             "}",
             full_timestamp,
-            left_velocity, left_torque, right_velocity, right_torque,
+            left_velocity, left_torque, thermal_data[LEFT_MOTOR].current_actual_A,
+            right_velocity, right_torque, thermal_data[RIGHT_MOTOR].current_actual_A,
             thermal_data[LEFT_MOTOR].motor_i2t_percent, 
             thermal_data[LEFT_MOTOR].drive_temp_celsius, 
             thermal_data[LEFT_MOTOR].core_temp_celsius,
             thermal_data[RIGHT_MOTOR].motor_i2t_percent, 
             thermal_data[RIGHT_MOTOR].drive_temp_celsius, 
             thermal_data[RIGHT_MOTOR].core_temp_celsius,
-            (thermal_data[LEFT_MOTOR].data_valid && thermal_data[RIGHT_MOTOR].data_valid) ? "true" : "false");
+            (thermal_data[LEFT_MOTOR].data_valid && thermal_data[RIGHT_MOTOR].data_valid) ? "true" : "false",
+            thermal_data[LEFT_MOTOR].torque_constant_mNm_per_A,
+            thermal_data[RIGHT_MOTOR].torque_constant_mNm_per_A);
     }
 
     // Send UDP broadcast

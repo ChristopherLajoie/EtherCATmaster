@@ -2,13 +2,17 @@
 #define HARDWARE_IO_H
 
 #include <termios.h>
+#include <math.h>
 #include "common.h"
 
 typedef struct {
     uint8_t motor_i2t_percent;
     float drive_temp_celsius;
     float core_temp_celsius;
+    float torque_constant_mNm_per_A;  // Torque constant in mNm/A
+    float current_actual_A;           // Calculated current in Amperes
     bool data_valid;
+    bool torque_constant_valid;       // Separate validity for torque constant
 } thermal_data_t;
 
 typedef struct
@@ -51,5 +55,9 @@ uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const
 int convert_to_mNm(int16_t raw_torque);
 int convert_to_raw(int16_t torque);
 bool read_thermal_data(int slave, thermal_data_t* thermal_data);
+bool read_torque_constant(int slave, float* torque_constant_mNm_per_A);
+void calculate_current_from_torque(thermal_data_t* thermal_data, int32_t torque_actual_mNm);
+bool configure_i2t_protection(int slave);
+int read_i2t_protection_mode(int slave);
 
 #endif

@@ -87,9 +87,6 @@ uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const
     return value;
 }
 
-/**
- * @brief Read thermal monitoring data via SDO
- */
 bool read_thermal_data(int slave, thermal_data_t* thermal_data)
 {
     int ret;
@@ -121,6 +118,31 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
         return false;
     }
     thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
+    
+    // Try to read torque constant (only needs to be read once, but we do it here for simplicity)
+    static float cached_torque_constants[MAX_MOTORS] = {0};
+    static bool torque_constants_read[MAX_MOTORS] = {false};
+    
+    // Use slave index to cache torque constant (assuming slave indices are 1 and 2)
+    int cache_index = (slave <= MAX_MOTORS) ? slave - 1 : 0;
+    
+    if (cache_index >= 0 && cache_index < MAX_MOTORS) {
+        if (!torque_constants_read[cache_index]) {
+            if (read_torque_constant(slave, &cached_torque_constants[cache_index])) {
+                torque_constants_read[cache_index] = true;
+                printf("Motor %d torque constant: %.3f mNm/A\n", slave, cached_torque_constants[cache_index]);
+            }
+        }
+        
+        if (torque_constants_read[cache_index]) {
+            thermal_data->torque_constant_mNm_per_A = cached_torque_constants[cache_index];
+            thermal_data->torque_constant_valid = true;
+        } else {
+            thermal_data->torque_constant_valid = false;
+        }
+    } else {
+        thermal_data->torque_constant_valid = false;
+    }
     
     thermal_data->data_valid = true;
     return true;
@@ -287,6 +309,11 @@ bool configure_pdo_mappings(int slave)
         return false;
     }
 
+    if (!configure_i2t_protection(slave))
+    {
+        printf("Warning: Failed to configure I2t protection for slave %d\n", slave);
+        // Continue l'initialisation même si I2t échoue
+    }
     return true;
 }
 
@@ -468,4 +495,100 @@ int convert_to_mNm(int16_t raw_torque)
 int convert_to_raw(int16_t torque)
 {
     return (torque * 1000) / 3300;
+}
+
+/**
+ * @brief Read torque constant via SDO
+ */
+bool read_torque_constant(int slave, float* torque_constant_mNm_per_A)
+{
+    int ret;
+    int size;
+    uint32_t torque_constant_uNm_per_A;
+    
+    // Read Torque constant - 0x2003:2 (in µNm/A)
+    size = sizeof(uint32_t);
+    ret = ec_SDOread(slave, 0x2003, 2, FALSE, &size, &torque_constant_uNm_per_A, EC_TIMEOUTRXM);
+    if (ret <= 0) {
+        return false;
+    }
+    
+    // Convert from µNm/A to mNm/A (divide by 1000)
+    *torque_constant_mNm_per_A = (int32_t)torque_constant_uNm_per_A / 1000.0f;
+    
+    return true;
+}
+
+/**
+ * @brief Calculate current from torque using torque constant
+ */
+void calculate_current_from_torque(thermal_data_t* thermal_data, int32_t torque_actual_mNm)
+{
+    if (thermal_data->torque_constant_valid && thermal_data->torque_constant_mNm_per_A > 0.0f) {
+        // Current (A) = Torque (mNm) / Torque Constant (mNm/A)
+        thermal_data->current_actual_A = fabsf((float)torque_actual_mNm / thermal_data->torque_constant_mNm_per_A);
+    } else {
+        thermal_data->current_actual_A = 0.0f;
+    }
+}
+
+/**
+ * @brief Read current I2t protection mode
+ */
+int read_i2t_protection_mode(int slave)
+{
+    int ret;
+    int size;
+    uint8_t i2t_mode;
+    
+    size = sizeof(uint8_t);
+    ret = ec_SDOread(slave, 0x200A, 1, FALSE, &size, &i2t_mode, EC_TIMEOUTRXM);
+    if (ret <= 0) {
+        printf("Failed to read I2t protection mode for slave %d\n", slave);
+        return -1;
+    }
+    
+    const char* mode_descriptions[] = {
+        "Disabled",
+        "Current Limitation", 
+        "Error Protection",
+        "Current Limitation (compatibility)",
+        "Error Protection (compatibility)"
+    };
+    
+    if (i2t_mode <= 4) {
+        printf("Motor %d I2t mode: %d (%s)\n", slave, i2t_mode, mode_descriptions[i2t_mode]);
+    } else {
+        printf("Motor %d I2t mode: %d (Unknown)\n", slave, i2t_mode);
+    }
+    
+    return i2t_mode;
+}
+
+/**
+ * @brief Configure I2t protection mode with verification
+ */
+bool configure_i2t_protection(int slave)
+{
+    // Read current mode
+    int current_mode = read_i2t_protection_mode(slave);
+     
+    int ret;
+    uint8_t i2t_mode = 0;  
+    
+    ret = ec_SDOwrite(slave, 0x200A, 1, FALSE, sizeof(i2t_mode), &i2t_mode, EC_TIMEOUTRXM);
+    if (ret <= 0) {
+        printf("❌ Failed to configure I2t protection mode for slave %d\n", slave);
+        return false;
+    }
+    
+    // Verify
+    int new_mode = read_i2t_protection_mode(slave);
+    if (new_mode == 1) {
+        printf("✅ Motor %d I2t: Mode %d → Mode 1 (Current Limitation)\n", slave, current_mode);
+        return true;
+    } else {
+        printf("❌ Motor %d I2t change failed: Expected 1, got %d\n", slave, new_mode);
+        return false;
+    }
 }
