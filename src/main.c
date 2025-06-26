@@ -11,6 +11,7 @@
 #include "can_interface.h"
 #include "motor_driver.h"
 #include "config.h"
+#include "realtime_broadcaster.h"
 #include "data_logger.h"
 
 #define MAX_ETHERCAT_RETRIES 5
@@ -96,6 +97,7 @@ static bool initialize_ethercat(void)
 static void cleanup_resources(void)
 {
     cleanup_data_logger();  
+    cleanup_realtime_broadcaster();
     ec_close();
     stop_can_interface();
     disable_raw_mode();
@@ -141,6 +143,11 @@ int main(void)
     {
         fprintf(stderr, "Warning: Data logging initialization failed\n");
         // Continue execution - logging is optional
+    }
+
+    if (!init_realtime_broadcaster())
+    {
+        fprintf(stderr, "Warning: Real-time HMI broadcaster initialization failed\n");
     }
     
     /* Configure operation mode to PVM */

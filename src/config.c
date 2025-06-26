@@ -1,12 +1,6 @@
 /**
  * @file config.c
- * @brief Configuration management for motor control application
- *
- * This file provides functions for loading and parsing configuration settings
- * from INI files into application-specific data structures.
- *
- * Uses the inih library for INI file parsing with a generic mapping mechanism
- * that automatically converts and stores values based on type.
+ * @brief Configuration management for motor control application - Updated with HMI support
  */
 
 #include "common.h"
@@ -40,31 +34,18 @@ static const ConfigMapping config_map[] = {
     {"differential_drive", "turn_factor", TYPE_FLOAT, offsetof(MotorConfig, turn_factor), 0},
     {"differential_drive", "reverse_left_motor", TYPE_INT, offsetof(MotorConfig, reverse_left_motor), 0},
     {"differential_drive", "reverse_right_motor", TYPE_INT, offsetof(MotorConfig, reverse_right_motor), 0},
-
+    
     // Logging parameters
     {"logging", "enable_logging", TYPE_INT, offsetof(MotorConfig, enable_logging), 0},
     {"logging", "log_file_path", TYPE_STRING, offsetof(MotorConfig, log_file_path), sizeof(((MotorConfig*)0)->log_file_path)},
     {"logging", "log_interval_ms", TYPE_INT, offsetof(MotorConfig, log_interval_ms), 0},
-};
-
-bool load_config(const char* filename)
-{
-    // Set default values
-    g_config.enable_logging = 0;
-    strncpy(g_config.log_file_path, "/tmp/motor_logs", sizeof(g_config.log_file_path) - 1);
-    g_config.log_interval_ms = 100; // Default 100ms logging interval
     
-    if (ini_parse(filename, config_handler, &g_config) < 0)
-    {
-        return false;
-    }
-
-    // Calculate derived values
-    calculate_derived_config_values();
-
-    printf("Configuration loaded from '%s'\n", filename);
-    return true;
-}
+    // Real-time HMI parameters
+    {"realtime_hmi", "enable_hmi", TYPE_INT, offsetof(MotorConfig, enable_realtime_hmi), 0},
+    {"realtime_hmi", "broadcast_ip", TYPE_STRING, offsetof(MotorConfig, hmi_broadcast_ip), sizeof(((MotorConfig*)0)->hmi_broadcast_ip)},
+    {"realtime_hmi", "broadcast_port", TYPE_INT, offsetof(MotorConfig, hmi_broadcast_port), 0},
+    {"realtime_hmi", "broadcast_interval_ms", TYPE_INT, offsetof(MotorConfig, hmi_broadcast_interval_ms), 0},
+};
 
 void calculate_derived_config_values(void)
 {
@@ -77,6 +58,35 @@ void calculate_derived_config_values(void)
     } else {
         g_config.log_interval_cycles = 25; // Default: log every 25 cycles (~100ms at 4ms cycle)
     }
+}
+
+bool load_config(const char* filename)
+{
+    // Set default values for all parameters
+    
+    // Logging defaults
+    g_config.enable_logging = 0;
+    strncpy(g_config.log_file_path, "/tmp/motor_logs", sizeof(g_config.log_file_path) - 1);
+    g_config.log_file_path[sizeof(g_config.log_file_path) - 1] = '\0';
+    g_config.log_interval_ms = 100; // Default 100ms logging interval
+    
+    // Real-time HMI defaults
+    g_config.enable_realtime_hmi = 0;
+    strncpy(g_config.hmi_broadcast_ip, "192.168.1.255", sizeof(g_config.hmi_broadcast_ip) - 1);
+    g_config.hmi_broadcast_ip[sizeof(g_config.hmi_broadcast_ip) - 1] = '\0';
+    g_config.hmi_broadcast_port = 9999;
+    g_config.hmi_broadcast_interval_ms = 100; // Default 10Hz (100ms)
+    
+    if (ini_parse(filename, config_handler, &g_config) < 0)
+    {
+        return false;
+    }
+
+    // Calculate derived values
+    calculate_derived_config_values();
+
+    printf("Configuration loaded from '%s'\n", filename);
+    return true;
 }
 
 static int config_handler(void* user, const char* section, const char* name, const char* value)
@@ -117,7 +127,7 @@ static int config_handler(void* user, const char* section, const char* name, con
                     {
                         if (val < 0.0f || val > 1.0f)
                         {
-                            fprintf(stderr, "Invalid turn factor value");
+                            fprintf(stderr, "Invalid turn factor value\n");
                             return 0;
                         }
                     }

@@ -1,6 +1,6 @@
 /**
- * @file data_logger.c - Updated version with unique filenames
- * @brief Implementation of data logging functionality with guaranteed unique names
+ * @file data_logger.c - Updated version with thermal data logging
+ * @brief Implementation of data logging functionality with thermal monitoring
  */
 
 #include "data_logger.h"
@@ -103,7 +103,7 @@ bool init_data_logger(void)
     printf("Data logging initialized: %s\n", filename);
     
     // Write CSV header
-    write_csv_header(g_motor_control.num_motors);
+    write_csv_header();
     
     return true;
 }
@@ -118,29 +118,20 @@ void cleanup_data_logger(void)
     g_data_logger.logging_enabled = false;
 }
 
-void write_csv_header(int num_motors)
+void write_csv_header(void)
 {
     if (!g_data_logger.log_file) return;
 
-    fprintf(g_data_logger.log_file, "Timestamp");
-    
-    if (num_motors == 1) {
-        fprintf(g_data_logger.log_file, ",Motor,Actual_Velocity_RPM,Torque_mNm");
-    } else if (num_motors >= 2) {
-        fprintf(g_data_logger.log_file, ",Motor,Actual_Velocity_RPM,Torque_mNm");
-    }
-    
-    fprintf(g_data_logger.log_file, "\n");
+    // Enhanced CSV header with thermal data and current
+    fprintf(g_data_logger.log_file, "Timestamp,Motor,Actual_Velocity_RPM,Torque_mNm,Current_A,I2t_Percent,Drive_Temp_C,Core_Temp_C,Torque_Constant_mNm_per_A,Thermal_Valid\n");
     fflush(g_data_logger.log_file);
 }
 
-void log_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors)
+void log_motor_data(txpdo_t* txpdo[], int num_motors)
 {
     if (!g_data_logger.logging_enabled || !g_data_logger.log_file) {
         return;
     }
-
-    // No cycle counting here - motor_driver.c already handles the interval
 
     // Get high precision timestamp with milliseconds
     struct timespec ts;
@@ -155,6 +146,21 @@ void log_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors)
     char full_timestamp[80];
     snprintf(full_timestamp, sizeof(full_timestamp), "%s.%03ld", 
              timestamp, ts.tv_nsec / 1000000);
+
+    // Read thermal data for all motors once per log cycle
+    static thermal_data_t thermal_data[MAX_MOTORS] = {0};
+    for (int motor = 0; motor < num_motors; motor++) {
+        int slave_index = g_motor_control.slave_indices[motor];
+        if (!read_thermal_data(slave_index, &thermal_data[motor])) {
+            // If thermal read fails, mark as invalid but continue logging
+            thermal_data[motor].data_valid = false;
+            thermal_data[motor].motor_i2t_percent = 0;
+            thermal_data[motor].drive_temp_celsius = 0.0f;
+            thermal_data[motor].core_temp_celsius = 0.0f;
+            thermal_data[motor].current_actual_A = 0.0f;
+            thermal_data[motor].torque_constant_mNm_per_A = 0.0f;
+        }
+    }
 
     // Log data for each motor
     for (int motor = 0; motor < num_motors; motor++) {
@@ -180,11 +186,21 @@ void log_motor_data(rxpdo_t* rxpdo[], txpdo_t* txpdo[], int num_motors)
             torque_mNm = -torque_mNm;
         }
 
-        fprintf(g_data_logger.log_file, "%s,%s,%d,%d\n",
+        // Calculate current from torque
+        calculate_current_from_torque(&thermal_data[motor], torque_mNm);
+
+        // Write CSV row with thermal data and current
+        fprintf(g_data_logger.log_file, "%s,%s,%d,%d,%.3f,%d,%.1f,%.1f,%.3f,%s\n",
                 full_timestamp,
                 motor_name,
                 actual_velocity,
-                torque_mNm);
+                torque_mNm,
+                thermal_data[motor].current_actual_A,
+                thermal_data[motor].motor_i2t_percent,
+                thermal_data[motor].drive_temp_celsius,
+                thermal_data[motor].core_temp_celsius,
+                thermal_data[motor].torque_constant_mNm_per_A,
+                thermal_data[motor].data_valid ? "true" : "false");
     }
     
     fflush(g_data_logger.log_file);  // Ensure data is written immediately
