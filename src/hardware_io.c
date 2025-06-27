@@ -35,6 +35,9 @@ static const cia402_state_pair_t cia402_states[] = {{0x00, "Not Ready To Switch 
 
 #define CIA402_NUM_STATES (sizeof(cia402_states) / sizeof(cia402_states[0]))
 
+static float g_torque_constants[MAX_MOTORS] = {0};
+static bool g_torque_constants_valid[MAX_MOTORS] = {false};
+
 uint8_t get_cia402_state(uint16_t statusword)
 {
     return statusword & STATUS_STATE_MASK;
@@ -92,59 +95,39 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     int ret;
     int size;
     uint32_t temp_value;
-    
+
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
     ret = ec_SDOread(slave, 0x200A, 3, FALSE, &size, &thermal_data->motor_i2t_percent, EC_TIMEOUTRXM);
-    if (ret <= 0) {
+    if (ret <= 0)
+    {
         thermal_data->data_valid = false;
         return false;
     }
-    
+
     // Read Drive-module temperature - 0x2031:1 (in m°C)
     size = sizeof(uint32_t);
     ret = ec_SDOread(slave, 0x2031, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret <= 0) {
+    if (ret <= 0)
+    {
         thermal_data->data_valid = false;
         return false;
     }
     thermal_data->drive_temp_celsius = (int32_t)temp_value / 1000.0f;
-    
+
     // Read Core-board temperature - 0x2030:1 (in m°C)
     size = sizeof(uint32_t);
     ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret <= 0) {
+    if (ret <= 0)
+    {
         thermal_data->data_valid = false;
         return false;
     }
     thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
-    
-    // Try to read torque constant (only needs to be read once, but we do it here for simplicity)
-    static float cached_torque_constants[MAX_MOTORS] = {0};
-    static bool torque_constants_read[MAX_MOTORS] = {false};
-    
-    // Use slave index to cache torque constant (assuming slave indices are 1 and 2)
-    int cache_index = (slave <= MAX_MOTORS) ? slave - 1 : 0;
-    
-    if (cache_index >= 0 && cache_index < MAX_MOTORS) {
-        if (!torque_constants_read[cache_index]) {
-            if (read_torque_constant(slave, &cached_torque_constants[cache_index])) {
-                torque_constants_read[cache_index] = true;
-                printf("Motor %d torque constant: %.3f mNm/A\n", slave, cached_torque_constants[cache_index]);
-            }
-        }
-        
-        if (torque_constants_read[cache_index]) {
-            thermal_data->torque_constant_mNm_per_A = cached_torque_constants[cache_index];
-            thermal_data->torque_constant_valid = true;
-        } else {
-            thermal_data->torque_constant_valid = false;
-        }
-    } else {
-        thermal_data->torque_constant_valid = false;
-    }
-    
+
+    thermal_data->current_actual_A = 0.0f;
     thermal_data->data_valid = true;
+
     return true;
 }
 
@@ -309,10 +292,9 @@ bool configure_pdo_mappings(int slave)
         return false;
     }
 
-    if (!configure_i2t_protection(slave))
+    if (!configure_i2t_protection(slave, 0))
     {
-        printf("Warning: Failed to configure I2t protection for slave %d\n", slave);
-        // Continue l'initialisation même si I2t échoue
+        return false;
     }
     return true;
 }
@@ -429,6 +411,10 @@ bool ethercat_init(void)
         g_motor_control.rxpdo[i] = (rxpdo_t*)(ec_slave[slave_index].outputs);
         g_motor_control.txpdo[i] = (txpdo_t*)(ec_slave[slave_index].inputs);
     }
+    if (!init_torque_constants())
+    {
+        printf("Warning: Some torque constants could not be read\n");
+    }
 
     return true;
 }
@@ -505,29 +491,41 @@ bool read_torque_constant(int slave, float* torque_constant_mNm_per_A)
     int ret;
     int size;
     uint32_t torque_constant_uNm_per_A;
-    
+
     // Read Torque constant - 0x2003:2 (in µNm/A)
     size = sizeof(uint32_t);
     ret = ec_SDOread(slave, 0x2003, 2, FALSE, &size, &torque_constant_uNm_per_A, EC_TIMEOUTRXM);
-    if (ret <= 0) {
+    if (ret <= 0)
+    {
         return false;
     }
-    
+
     // Convert from µNm/A to mNm/A (divide by 1000)
     *torque_constant_mNm_per_A = (int32_t)torque_constant_uNm_per_A / 1000.0f;
-    
+
     return true;
 }
 
 /**
  * @brief Calculate current from torque using torque constant
  */
-void calculate_current_from_torque(thermal_data_t* thermal_data, int32_t torque_actual_mNm)
+void calculate_current_from_torque(thermal_data_t* thermal_data, int32_t torque_actual_mNm, int motor_index)
 {
-    if (thermal_data->torque_constant_valid && thermal_data->torque_constant_mNm_per_A > 0.0f) {
-        // Current (A) = Torque (mNm) / Torque Constant (mNm/A)
-        thermal_data->current_actual_A = fabsf((float)torque_actual_mNm / thermal_data->torque_constant_mNm_per_A);
-    } else {
+    if (is_torque_constant_valid(motor_index))
+    {
+        float torque_constant = get_torque_constant(motor_index);
+        if (torque_constant > 0.0f)
+        {
+            // Current (A) = Torque (mNm) / Torque Constant (mNm/A)
+            thermal_data->current_actual_A = fabsf((float)torque_actual_mNm / torque_constant);
+        }
+        else
+        {
+            thermal_data->current_actual_A = 0.0f;
+        }
+    }
+    else
+    {
         thermal_data->current_actual_A = 0.0f;
     }
 }
@@ -540,55 +538,80 @@ int read_i2t_protection_mode(int slave)
     int ret;
     int size;
     uint8_t i2t_mode;
-    
+
     size = sizeof(uint8_t);
     ret = ec_SDOread(slave, 0x200A, 1, FALSE, &size, &i2t_mode, EC_TIMEOUTRXM);
-    if (ret <= 0) {
-        printf("Failed to read I2t protection mode for slave %d\n", slave);
+    if (ret <= 0)
+    {
         return -1;
     }
-    
-    const char* mode_descriptions[] = {
-        "Disabled",
-        "Current Limitation", 
-        "Error Protection",
-        "Current Limitation (compatibility)",
-        "Error Protection (compatibility)"
-    };
-    
-    if (i2t_mode <= 4) {
+
+    const char* mode_descriptions[] = {"Disabled",
+                                       "Current Limitation",
+                                       "Error Protection",
+                                       "Current Limitation (compatibility)",
+                                       "Error Protection (compatibility)"};
+
+    if (i2t_mode <= 4)
+    {
         printf("Motor %d I2t mode: %d (%s)\n", slave, i2t_mode, mode_descriptions[i2t_mode]);
-    } else {
+    }
+    else
+    {
         printf("Motor %d I2t mode: %d (Unknown)\n", slave, i2t_mode);
     }
-    
+
     return i2t_mode;
 }
 
 /**
- * @brief Configure I2t protection mode with verification
+ * @brief Configure I2t protection mode
  */
-bool configure_i2t_protection(int slave)
+bool configure_i2t_protection(int slave, uint8_t i2t_mode)
 {
-    // Read current mode
-    int current_mode = read_i2t_protection_mode(slave);
-     
     int ret;
-    uint8_t i2t_mode = 0;  
-    
     ret = ec_SDOwrite(slave, 0x200A, 1, FALSE, sizeof(i2t_mode), &i2t_mode, EC_TIMEOUTRXM);
-    if (ret <= 0) {
-        printf("❌ Failed to configure I2t protection mode for slave %d\n", slave);
+    if (ret <= 0)
+    {
+        printf("Failed to configure I2t protection mode for slave %d\n", slave);
         return false;
     }
-    
-    // Verify
-    int new_mode = read_i2t_protection_mode(slave);
-    if (new_mode == 1) {
-        printf("✅ Motor %d I2t: Mode %d → Mode 1 (Current Limitation)\n", slave, current_mode);
-        return true;
-    } else {
-        printf("❌ Motor %d I2t change failed: Expected 1, got %d\n", slave, new_mode);
-        return false;
+    return true;
+}
+
+bool init_torque_constants(void)
+{
+    bool all_success = true;
+
+    for (int i = 0; i < g_motor_control.num_motors; i++)
+    {
+        int slave_index = g_motor_control.slave_indices[i];
+        if (read_torque_constant(slave_index, &g_torque_constants[i]))
+        {
+            g_torque_constants_valid[i] = true;
+        }
+        else
+        {
+            g_torque_constants_valid[i] = false;
+            g_torque_constants[i] = 0.0f;
+            printf("Warning: Failed to read torque constant for motor %d\n", slave_index);
+            all_success = false;
+        }
     }
+
+    return all_success;
+}
+
+float get_torque_constant(int motor_index)
+{
+    if (motor_index >= 0 && motor_index < MAX_MOTORS && g_torque_constants_valid[motor_index])
+    {
+        return g_torque_constants[motor_index];
+    }
+    return 0.0f;
+}
+
+bool is_torque_constant_valid(int motor_index)
+{
+    return (motor_index >= 0 && motor_index < MAX_MOTORS && g_torque_constants_valid[motor_index]);
 }

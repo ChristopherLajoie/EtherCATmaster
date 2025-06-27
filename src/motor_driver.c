@@ -1,11 +1,8 @@
 /**
  * @file motor_driver.c
- * @brief Implementation of the EtherCAT motor driver state machine and control logic
+ * @brief Implementation with minimal CiA-402 shutdown sequence
  *
- * The main control loop runs in a dedicated real-time thread that processes
- * input data from CAN (joystick/buttons) and communicates with the motor
- * drive via EtherCAT PDOs at a fixed cycle time.
- *
+ * Adds Quick-Stop → Disable Voltage sequence when enable switch is released
  */
 
 #include "motor_driver.h"
@@ -23,7 +20,6 @@ void init_motor_control_state(motor_control_state_t* state)
         return;
 
     memset(state, 0, sizeof(*state));
-
     state->state = STATE_BOOT;
 }
 
@@ -135,11 +131,12 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
 
 void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocities_t velocities)
 {
-    // Read thermal data to get current calculations
     static thermal_data_t thermal_data[MAX_MOTORS] = {0};
-    for (int motor = 0; motor < g_motor_control.num_motors; motor++) {
+    for (int motor = 0; motor < g_motor_control.num_motors; motor++)
+    {
         int slave_index = g_motor_control.slave_indices[motor];
-        if (!read_thermal_data(slave_index, &thermal_data[motor])) {
+        if (!read_thermal_data(slave_index, &thermal_data[motor]))
+        {
             thermal_data[motor].data_valid = false;
             thermal_data[motor].current_actual_A = 0.0f;
         }
@@ -147,41 +144,38 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
 
     if (g_motor_control.num_motors >= 2)
     {
-        // Get actual velocities and torques
         int32_t left_actual = txpdo[LEFT_MOTOR]->velocity_actual;
         int32_t right_actual = txpdo[RIGHT_MOTOR]->velocity_actual;
         int32_t left_torque = convert_to_mNm(txpdo[LEFT_MOTOR]->torque_actual);
         int32_t right_torque = convert_to_mNm(txpdo[RIGHT_MOTOR]->torque_actual);
-        
-        // Get target velocities from the differential calculation
+
         int32_t left_target = velocities.left_velocity;
         int32_t right_target = velocities.right_velocity;
-        
-        // Apply reverse correction for display - show logical robot direction
-        if (g_config.reverse_left_motor) {
+
+        // Apply reverse correction for display
+        if (g_config.reverse_left_motor)
+        {
             left_actual = -left_actual;
             left_target = -left_target;
             left_torque = -left_torque;
         }
-        if (g_config.reverse_right_motor) {
+        if (g_config.reverse_right_motor)
+        {
             right_actual = -right_actual;
             right_target = -right_target;
             right_torque = -right_torque;
         }
 
-        // Calculate current from torque
-        calculate_current_from_torque(&thermal_data[LEFT_MOTOR], left_torque);
-        calculate_current_from_torque(&thermal_data[RIGHT_MOTOR], right_torque);
+        calculate_current_from_torque(&thermal_data[LEFT_MOTOR], left_torque, LEFT_MOTOR);
+        calculate_current_from_torque(&thermal_data[RIGHT_MOTOR], right_torque, RIGHT_MOTOR);
 
-        printf("L:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm| Current: L=%.2f R=%.2f A\n",
+        printf("L:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm\n",
                left_actual,
                left_target,
                right_actual,
                right_target,
                left_torque,
-               right_torque,
-               thermal_data[LEFT_MOTOR].current_actual_A,
-               thermal_data[RIGHT_MOTOR].current_actual_A);
+               right_torque);
 
         for (int motor = 0; motor < 2; motor++)
         {
@@ -189,11 +183,7 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             const char* state_string = get_cia402_state_string(current_state);
             const char* motor_name = (motor == LEFT_MOTOR) ? "Left " : "Right";
 
-            printf("  %s - Status: %-20s", motor_name, state_string);
-            if (thermal_data[motor].torque_constant_valid) {
-                printf(" | TorqueConst: %.3f mNm/A", thermal_data[motor].torque_constant_mNm_per_A);
-            }
-            printf("\n");
+            printf("  %s - Status: %-20s\n", motor_name, state_string);
         }
     }
     else if (g_motor_control.num_motors == 1)
@@ -201,35 +191,28 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
         int32_t actual = txpdo[0]->velocity_actual;
         int32_t target = rxpdo[0]->target_velocity;
         int32_t torque = convert_to_mNm(txpdo[0]->torque_actual);
-        
-        // Apply reverse correction for single motor (if it's configured as left motor with reversal)
-        if (g_config.reverse_left_motor) {
+
+        // Apply reverse correction for display
+        if (g_config.reverse_left_motor)
+        {
             actual = -actual;
             target = -target;
             torque = -torque;
         }
 
-        // Calculate current from torque
-        calculate_current_from_torque(&thermal_data[0], torque);
+        calculate_current_from_torque(&thermal_data[0], torque, 0);
 
-        printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Current: %.2f A | Differential Test: L=%4d R=%4d rpm\n",
+        printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Differential Test: L=%4d R=%4d rpm\n",
                actual,
                target,
                torque,
-               thermal_data[0].current_actual_A,
                velocities.left_velocity,
                velocities.right_velocity);
 
         uint16_t current_state = get_cia402_state(txpdo[0]->statusword);
         const char* state_string = get_cia402_state_string(current_state);
-        printf("Status: %-20s", state_string);
-        if (thermal_data[0].torque_constant_valid) {
-            printf(" | TorqueConst: %.3f mNm/A", thermal_data[0].torque_constant_mNm_per_A);
-        }
-        printf("\n");
+        printf("Status: %-20s\n", state_string);
     }
-
-    printf("\n");
 }
 
 bool attempt_ethercat_reconnection()
@@ -256,8 +239,10 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
         if (state->last_reported_fault_id != current_state)
         {
             printf("Motor %d Fault detected: %s\n", motor_index, get_cia402_state_string(current_state));
-
             printf("Starting reset sequence\n");
+
+            log_motor_fault(motor_index, current_state, get_cia402_state_string(current_state));
+
             state->last_reported_fault_id = current_state;
             state->fault_reset_attempts = 0;
         }
@@ -269,15 +254,12 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
             case 0:
                 rxpdo->controlword = 0;
                 break;
-
             case 1:
                 rxpdo->controlword = CW_FAULT_RESET;
                 break;
-
             case 2:
                 rxpdo->controlword = CW_SHUTDOWN;
                 break;
-
             case 3:
                 rxpdo->controlword = CW_DISABLEVOLTAGE;
                 break;
@@ -378,13 +360,10 @@ void* motor_control_cyclic_task(void* arg)
                 switch (g_motor_state[motor].state)
                 {
                     case STATE_BOOT:
-
                         if (txpdo[motor]->statusword == 0)
                         {
                             static int zero_statusword_count[MAX_MOTORS] = {0};
-
                             rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
-
                             zero_statusword_count[motor]++;
 
                             // After significant time, proceed anyway
@@ -428,12 +407,10 @@ void* motor_control_cyclic_task(void* arg)
                         break;
 
                     case STATE_INIT:
-
                         switch (g_motor_state[motor].init_step)
                         {
                             // Deep reset state
                             case 0:
-
                                 if (g_motor_state[motor].init_wait == 0)
                                 {
                                     rxpdo[motor]->controlword = 0;
@@ -512,14 +489,14 @@ void* motor_control_cyclic_task(void* arg)
                         break;
 
                     case STATE_OPERATIONAL:
-
+                    {
                         uint16_t controlword = CW_ENABLE;
 
+                        // Check for state mismatch
                         if (!(txpdo[motor]->statusword & SW_OPERATION_ENABLED_BIT))
                         {
                             printf("Warning: Motor %d Operation disabled during operation, reinitializing\n", motor);
-
-                            g_motor_state[motor].state = STATE_INIT;
+                            g_motor_state[motor].state = STATE_BOOT;
                             g_motor_state[motor].init_step = 0;
                             g_motor_state[motor].init_wait = 0;
                             break;
@@ -527,12 +504,7 @@ void* motor_control_cyclic_task(void* arg)
 
                         if (txpdo[motor]->statusword & SW_OPERATION_ENABLED_BIT)
                         {
-                            if (!estop)
-                            {
-                                rxpdo[motor]->target_velocity = 0;
-                            }
-
-                            else if (enable)
+                            if (enable)
                             {
                                 if (motor == LEFT_MOTOR)
                                 {
@@ -543,9 +515,20 @@ void* motor_control_cyclic_task(void* arg)
                                     g_motor_state[motor].target_velocity = velocities.right_velocity;
                                 }
                             }
-                            else
+                            else if (!enable || !estop) //estop logic inversed
                             {
-                                g_motor_state[motor].target_velocity = 0;
+                                // Enable switched off
+                                rxpdo[motor]->controlword = CW_QUICKSTOP;
+                                rxpdo[motor]->target_velocity = 0;
+
+                                if (!(txpdo[motor]->statusword & SW_QUICK_STOP_BIT))
+                                {
+                                    rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
+                                    g_motor_state[motor].state = STATE_BOOT;
+                                    g_motor_state[motor].init_step = 0;
+                                    g_motor_state[motor].init_wait = 0;
+                                }
+                                continue;
                             }
 
                             if (g_motor_state[motor].target_velocity != g_motor_state[motor].current_velocity)
@@ -567,12 +550,13 @@ void* motor_control_cyclic_task(void* arg)
 
                             rxpdo[motor]->controlword = controlword;
                         }
-                        break;
+                    }
+                    break;
                 }
             }
 
             static int log_interval = 0;
-            if (++log_interval >= g_config.log_interval_cycles)  
+            if (++log_interval >= g_config.log_interval_cycles)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
                 log_motor_data(txpdo, g_motor_control.num_motors);
@@ -646,7 +630,7 @@ void* motor_control_cyclic_task(void* arg)
     }
 
     printf("Shutting down motor(s)\n");
-    int shutdown_cycles = 100;
+    int shutdown_cycles = 200;
 
     while (shutdown_cycles-- > 0)
     {
@@ -664,12 +648,21 @@ void* motor_control_cyclic_task(void* arg)
 
         for (int motor = 0; motor < g_motor_control.num_motors; motor++)
         {
-            rxpdo[motor]->target_velocity = 0;
-            rxpdo[motor]->controlword = CW_DISABLEOPERATION;
+            if (shutdown_cycles > 100)
+            {
+                rxpdo[motor]->target_velocity = 0;
+                rxpdo[motor]->controlword = CW_QUICKSTOP;
+            }
+            else
+            {
+                rxpdo[motor]->target_velocity = 0;
+                rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
+            }
         }
 
         ec_send_processdata();
     }
 
+    printf("Motor shutdown sequence complete\n");
     return NULL;
 }
