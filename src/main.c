@@ -96,7 +96,7 @@ static bool initialize_ethercat(void)
 
 static void cleanup_resources(void)
 {
-    cleanup_data_logger();  
+    cleanup_data_logger();
     cleanup_realtime_broadcaster();
     ec_close();
     stop_can_interface();
@@ -142,14 +142,13 @@ int main(void)
     if (!init_data_logger())
     {
         fprintf(stderr, "Warning: Data logging initialization failed\n");
-        // Continue execution - logging is optional
     }
 
     if (!init_realtime_broadcaster())
     {
-        fprintf(stderr, "Warning: Real-time HMI broadcaster initialization failed\n");
+        fprintf(stderr, "Warning: Real-time broadcaster initialization failed\n");
     }
-    
+
     /* Configure operation mode to PVM */
     for (int i = 0; i < g_motor_control.num_motors; i++)
     {
@@ -163,7 +162,6 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    /* Main monitoring loop */
     while (g_motor_control.run)
     {
         usleep(SLEEP_INTERVAL_US);

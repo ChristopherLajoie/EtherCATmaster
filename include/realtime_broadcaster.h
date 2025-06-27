@@ -10,7 +10,8 @@
 #include <stdbool.h>
 #include "motor_types.h"
 
-typedef struct {
+typedef struct
+{
     bool enabled;
     int socket_fd;
     int broadcast_interval_cycles;
@@ -35,7 +36,7 @@ void cleanup_realtime_broadcaster(void);
 /**
  * @brief Broadcast motor data (call from control loop)
  * @param rxpdo Array of RxPDO pointers
- * @param txpdo Array of TxPDO pointers  
+ * @param txpdo Array of TxPDO pointers
  * @param num_motors Number of motors
  */
 void broadcast_motor_data(txpdo_t* txpdo[], int num_motors);

@@ -29,6 +29,7 @@
 #define CW_DISABLEVOLTAGE 0x0000
 #define CW_DISABLEOPERATION 0x0007
 #define CW_FAULT_RESET 0x0080
+#define CW_QUICKSTOP 0x000B
 
 /* Motion parameter macros */
 #define MAX_TORQUE convert_to_raw(g_config.max_torque)
