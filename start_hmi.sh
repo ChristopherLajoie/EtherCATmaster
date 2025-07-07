@@ -16,9 +16,9 @@ echo -e "${BLUE}🎮 Motor Control HMI Server${NC}"
 echo ""
 
 # Check if HMI server exists
-if [ ! -f "./motor_hmi_server.py" ]; then
+if [ ! -f "./hmi_server.py" ]; then
     echo -e "${RED}❌ HMI server not found!${NC}"
-    echo "Please ensure motor_hmi_server.py is in the current directory."
+    echo "Please ensure hmi_server.py is in the current directory."
     exit 1
 fi
 
@@ -31,21 +31,27 @@ if [ $? -ne 0 ]; then
 fi
 
 # Get network info
-PI_IP=$(hostname -I | awk '{print $1}')
+WLAN0_IP=$(ifconfig wlan0 2>/dev/null | grep -o 'inet [0-9.]*' | cut -d' ' -f2)
+UAP0_IP=$(ifconfig uap0 2>/dev/null | grep -o 'inet [0-9.]*' | cut -d' ' -f2)
 HMI_PORT=8080
 
 echo -e "${GREEN}✓ System ready${NC}"
 echo ""
 echo "Network Information:"
-echo "  Pi IP Address: $PI_IP"
-echo "  HMI Web Interface: http://$PI_IP:$HMI_PORT"
+if [ ! -z "$WLAN0_IP" ]; then
+    echo "  wlan0 (Internet): $WLAN0_IP"
+fi
+if [ ! -z "$UAP0_IP" ]; then
+    echo "  uap0 (Access Point): $UAP0_IP"
+fi
+echo "  HMI Web Port: $HMI_PORT"
 echo "  WebSocket Port: $((HMI_PORT + 1))"
 echo "  UDP Broadcast Port: 9999"
 echo ""
 
 # Start HMI server in background
 echo -e "${BLUE}Starting HMI server...${NC}"
-python3 ./motor_hmi_server.py --port $HMI_PORT --udp-port 9999 --udp-ip "192.168.1.255" &
+python3 ./hmi_server.py --port $HMI_PORT --udp-port 9999 --csv-path "/home/foxtrot/log/motor_data" &
 HMI_PID=$!
 
 # Wait a moment for server to start
@@ -63,12 +69,18 @@ echo ""
 echo -e "${GREEN}🌐 Web HMI is ready!${NC}"
 echo ""
 echo "Access from any device on your network:"
-echo "  📱 Phone/Tablet: http://$PI_IP:$HMI_PORT"
-echo "  💻 Computer: http://$PI_IP:$HMI_PORT"
+if [ ! -z "$WLAN0_IP" ]; then
+    echo "  � Internet Network (wlan0): http://$WLAN0_IP:$HMI_PORT"
+fi
+if [ ! -z "$UAP0_IP" ]; then
+    echo "  � Access Point (uap0): http://$UAP0_IP:$HMI_PORT"
+fi
 echo "  🏠 Local: http://localhost:$HMI_PORT"
 echo ""
 echo -e "${BLUE}HMI server is running...${NC}"
 echo "Waiting for motor control data on UDP port 9999"
+echo "  - Listening on all network interfaces"
+echo "  - Broadcasting supported on both wlan0 and uap0"
 echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""

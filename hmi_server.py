@@ -45,32 +45,71 @@ class MotorHMIServer:
         # Latest data for new connections
         self.latest_data = None
 
-        # UDP socket
-        self.udp_socket = None
+        # UDP sockets for multiple interfaces
+        self.udp_sockets = []
         self.running = False
 
         # Store the event loop for cross-thread communication
         self.loop = None
 
+        # Get network interfaces
+        self.network_interfaces = self._get_network_interfaces()
+
         print(f"Motor HMI Server with CSV Export and Current Display")
         print(f"Web interface: http://localhost:{web_port}")
-        print(f"UDP listener: {udp_ip}:{udp_port}")
+        print(f"UDP listener: port {udp_port}")
         print(f"CSV files: {csv_path}")
+        print(f"Network interfaces detected: {', '.join([f'{iface}({ip})' for iface, ip in self.network_interfaces.items()])}")
+
+    def _get_network_interfaces(self):
+        """Get available network interfaces and their IP addresses"""
+        import subprocess
+        import re
+        
+        interfaces = {}
+        try:
+            # Run ifconfig to get interface information
+            result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+            if result.returncode == 0:
+                # Parse ifconfig output
+                current_interface = None
+                for line in result.stdout.split('\n'):
+                    # Look for interface names
+                    if re.match(r'^[a-zA-Z0-9]+:', line):
+                        current_interface = line.split(':')[0]
+                    # Look for inet addresses
+                    elif current_interface and 'inet ' in line and '127.0.0.1' not in line:
+                        match = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)', line)
+                        if match:
+                            ip = match.group(1)
+                            interfaces[current_interface] = ip
+                            
+        except Exception as e:
+            print(f"Warning: Could not detect network interfaces: {e}")
+            
+        return interfaces
 
     def start_udp_listener(self):
-        """Start UDP listener in background thread"""
+        """Start UDP listener in background thread for all interfaces"""
         try:
+            # Create UDP socket that listens on all interfaces
             self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.udp_socket.setsockopt(
-                socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            
+            # Bind to all interfaces
             self.udp_socket.bind(('', self.udp_port))
             self.udp_socket.settimeout(1.0)
 
-            print(f"✓ UDP listener started on port {self.udp_port}")
+            print(f"✓ UDP listener started on port {self.udp_port} (all interfaces)")
+            print(f"  Listening for broadcasts on:")
+            for iface, ip in self.network_interfaces.items():
+                print(f"    {iface}: {ip}")
 
             while self.running:
                 try:
                     data, addr = self.udp_socket.recvfrom(1024)
+                    print(f"Received UDP data from {addr[0]}:{addr[1]}")
                     self.handle_motor_data(data.decode('utf-8'))
                 except socket.timeout:
                     continue
@@ -1300,7 +1339,10 @@ class MotorHMIServer:
         await start_server
         print(f"✓ WebSocket server started on port {self.web_port + 1}")
         print(f"✓ HMI server with CSV export and current monitoring ready!")
-        print(f"  Web interface: http://localhost:{self.web_port}")
+        print(f"  Access from any of these addresses:")
+        for iface, ip in self.network_interfaces.items():
+            print(f"    {iface}: http://{ip}:{self.web_port}")
+        print(f"  Local access: http://localhost:{self.web_port}")
         print(f"  CSV downloads: Built into web interface")
 
     async def run(self):

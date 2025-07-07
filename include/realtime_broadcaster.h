@@ -16,8 +16,11 @@ typedef struct
     int socket_fd;
     int broadcast_interval_cycles;
     int cycle_counter;
-    char broadcast_ip[16];
+    char broadcast_ip[16];  // Primary broadcast IP (for backward compatibility)
     int broadcast_port;
+    // Support for multiple broadcast addresses
+    char broadcast_addresses[4][16];  // Support up to 4 broadcast addresses
+    int num_broadcast_addresses;
 } RealtimeBroadcaster;
 
 extern RealtimeBroadcaster g_broadcaster;

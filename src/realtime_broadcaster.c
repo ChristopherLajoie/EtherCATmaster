@@ -48,6 +48,35 @@ bool init_realtime_broadcaster(void)
     g_broadcaster.broadcast_ip[sizeof(g_broadcaster.broadcast_ip) - 1] = '\0';
     g_broadcaster.broadcast_port = g_config.hmi_broadcast_port;
 
+    // Set up multiple broadcast addresses for dual network setup
+    g_broadcaster.num_broadcast_addresses = 0;
+    
+    // Add the primary broadcast address from config
+    strncpy(g_broadcaster.broadcast_addresses[0], g_config.hmi_broadcast_ip, 15);
+    g_broadcaster.broadcast_addresses[0][15] = '\0';
+    g_broadcaster.num_broadcast_addresses = 1;
+    
+    // Add additional broadcast addresses for common dual network setups
+    // Check if we should add the UAP0 broadcast address (10.42.0.255)
+    if (strncmp(g_config.hmi_broadcast_ip, "192.168.1.255", 13) == 0) {
+        strncpy(g_broadcaster.broadcast_addresses[1], "10.42.0.255", 15);
+        g_broadcaster.broadcast_addresses[1][15] = '\0';
+        g_broadcaster.num_broadcast_addresses = 2;
+        printf("Real-time broadcaster configured for dual network (wlan0 + uap0)\n");
+    } else if (strncmp(g_config.hmi_broadcast_ip, "10.42.0.255", 11) == 0) {
+        strncpy(g_broadcaster.broadcast_addresses[1], "192.168.1.255", 15);
+        g_broadcaster.broadcast_addresses[1][15] = '\0';
+        g_broadcaster.num_broadcast_addresses = 2;
+        printf("Real-time broadcaster configured for dual network (uap0 + wlan0)\n");
+    }
+
+    printf("Broadcasting to %d address(es): ", g_broadcaster.num_broadcast_addresses);
+    for (int i = 0; i < g_broadcaster.num_broadcast_addresses; i++) {
+        printf("%s", g_broadcaster.broadcast_addresses[i]);
+        if (i < g_broadcaster.num_broadcast_addresses - 1) printf(", ");
+    }
+    printf("\n");
+
     // Calculate broadcast interval with explicit casting and safety checks
     int interval_ms = g_config.hmi_broadcast_interval_ms;
     int cycle_us = g_config.cycletime;
@@ -250,26 +279,29 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
                  get_torque_constant(RIGHT_MOTOR));
     }
 
-    // Send UDP broadcast
-    struct sockaddr_in broadcast_addr;
-    memset(&broadcast_addr, 0, sizeof(broadcast_addr));
-    broadcast_addr.sin_family = AF_INET;
-    broadcast_addr.sin_port = htons(g_broadcaster.broadcast_port);
-    inet_pton(AF_INET, g_broadcaster.broadcast_ip, &broadcast_addr.sin_addr);
+    // Send UDP broadcast to all configured addresses
+    for (int addr_idx = 0; addr_idx < g_broadcaster.num_broadcast_addresses; addr_idx++) {
+        struct sockaddr_in broadcast_addr;
+        memset(&broadcast_addr, 0, sizeof(broadcast_addr));
+        broadcast_addr.sin_family = AF_INET;
+        broadcast_addr.sin_port = htons(g_broadcaster.broadcast_port);
+        inet_pton(AF_INET, g_broadcaster.broadcast_addresses[addr_idx], &broadcast_addr.sin_addr);
 
-    ssize_t sent = sendto(g_broadcaster.socket_fd,
-                          json_buffer,
-                          strlen(json_buffer),
-                          0,
-                          (struct sockaddr*)&broadcast_addr,
-                          sizeof(broadcast_addr));
+        ssize_t sent = sendto(g_broadcaster.socket_fd,
+                              json_buffer,
+                              strlen(json_buffer),
+                              0,
+                              (struct sockaddr*)&broadcast_addr,
+                              sizeof(broadcast_addr));
 
-    if (sent < 0)
-    {
-        static int error_count = 0;
-        if (++error_count % 100 == 1)
+        if (sent < 0)
         {
-            perror("UDP broadcast failed");
+            static int error_count = 0;
+            if (++error_count % 100 == 1)
+            {
+                printf("UDP broadcast failed to %s: ", g_broadcaster.broadcast_addresses[addr_idx]);
+                perror("");
+            }
         }
     }
 }
