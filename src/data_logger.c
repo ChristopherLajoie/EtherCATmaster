@@ -132,8 +132,7 @@ void write_csv_header(void)
         return;
 
     fprintf(g_data_logger.log_file,
-            "Timestamp,Motor,Actual_Velocity_RPM,Torque_mNm,Current_A,I2t_Percent,Drive_Temp_C,Core_Temp_C,Torque_Constant_mNm_"
-            "per_A,Thermal_Valid\n");
+            "Timestamp,Motor,Actual_Velocity_RPM,Torque_mNm,Current_A,I2t_Percent,Drive_Temp_C,Core_Temp_C,Index_Temp_C,Thermal_Valid\n");
     fflush(g_data_logger.log_file);
 }
 
@@ -169,8 +168,8 @@ void log_motor_data(txpdo_t* txpdo[], int num_motors)
             thermal_data[motor].motor_i2t_percent = 0;
             thermal_data[motor].drive_temp_celsius = 0.0f;
             thermal_data[motor].core_temp_celsius = 0.0f;
+            thermal_data[motor].index_temp_celsius = 0.0f;
             thermal_data[motor].current_actual_A = 0.0f;
-            thermal_data[motor].torque_constant_mNm_per_A = 0.0f;
         }
     }
 
@@ -205,7 +204,7 @@ void log_motor_data(txpdo_t* txpdo[], int num_motors)
         calculate_current_from_torque(&thermal_data[motor], torque_mNm, motor);
 
         fprintf(g_data_logger.log_file,
-                "%s,%s,%d,%d,%.3f,%d,%.1f,%.1f,%.3f,%s\n",
+                "%s,%s,%d,%d,%.3f,%d,%.1f,%.1f,%.1f,%s\n",
                 full_timestamp,
                 motor_name,
                 actual_velocity,
@@ -214,7 +213,7 @@ void log_motor_data(txpdo_t* txpdo[], int num_motors)
                 thermal_data[motor].motor_i2t_percent,
                 thermal_data[motor].drive_temp_celsius,
                 thermal_data[motor].core_temp_celsius,
-                get_torque_constant(motor),
+                thermal_data[motor].index_temp_celsius,
                 thermal_data[motor].data_valid ? "true" : "false");
     }
 

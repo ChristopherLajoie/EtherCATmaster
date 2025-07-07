@@ -91,6 +91,16 @@ void cleanup_realtime_broadcaster(void)
     g_broadcaster.enabled = false;
 }
 
+// Check for thermal warnings - only warn if i2t > 100% AND (core temp > 90°C OR drive temp > 90°C)
+static bool check_thermal_warning(const thermal_data_t* thermal_data)
+{
+    if (!thermal_data->data_valid)
+        return false;
+    
+    return (thermal_data->motor_i2t_percent > 100) && 
+           (thermal_data->core_temp_celsius > 90.0f || thermal_data->drive_temp_celsius > 90.0f);
+}
+
 void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
 {
     if (!g_broadcaster.enabled)
@@ -155,12 +165,14 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
 
         calculate_current_from_torque(&thermal_data[0], torque, 0);
 
+        bool thermal_warning = check_thermal_warning(&thermal_data[0]);
+
         snprintf(json_buffer,
                  sizeof(json_buffer),
                  "{"
                  "\"timestamp\":\"%s\","
                  "\"motor\":{\"velocity\":%d,\"torque\":%d,\"current\":%.3f},"
-                 "\"thermal\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f,\"valid\":%s},"
+                 "\"thermal\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f,\"index_temp\":%.1f,\"warning\":%s,\"valid\":%s},"
                  "\"torque_constant\":%.3f"
                  "}",
                  full_timestamp,
@@ -170,6 +182,8 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
                  thermal_data[0].motor_i2t_percent,
                  thermal_data[0].drive_temp_celsius,
                  thermal_data[0].core_temp_celsius,
+                 thermal_data[0].index_temp_celsius,
+                 thermal_warning ? "true" : "false",
                  thermal_data[0].data_valid ? "true" : "false",
                  get_torque_constant(0));
     }
@@ -195,6 +209,9 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
         calculate_current_from_torque(&thermal_data[LEFT_MOTOR], left_torque, LEFT_MOTOR);
         calculate_current_from_torque(&thermal_data[RIGHT_MOTOR], right_torque, RIGHT_MOTOR);
 
+        bool left_thermal_warning = check_thermal_warning(&thermal_data[LEFT_MOTOR]);
+        bool right_thermal_warning = check_thermal_warning(&thermal_data[RIGHT_MOTOR]);
+
         snprintf(json_buffer,
                  sizeof(json_buffer),
                  "{"
@@ -202,8 +219,8 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
                  "\"left_motor\":{\"velocity\":%d,\"torque\":%d,\"current\":%.3f},"
                  "\"right_motor\":{\"velocity\":%d,\"torque\":%d,\"current\":%.3f},"
                  "\"thermal\":{"
-                 "\"left\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f},"
-                 "\"right\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f},"
+                 "\"left\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f,\"index_temp\":%.1f,\"warning\":%s},"
+                 "\"right\":{\"i2t\":%d,\"drive_temp\":%.1f,\"core_temp\":%.1f,\"index_temp\":%.1f,\"warning\":%s},"
                  "\"valid\":%s"
                  "},"
                  "\"torque_constants\":{"
@@ -221,9 +238,13 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
                  thermal_data[LEFT_MOTOR].motor_i2t_percent,
                  thermal_data[LEFT_MOTOR].drive_temp_celsius,
                  thermal_data[LEFT_MOTOR].core_temp_celsius,
+                 thermal_data[LEFT_MOTOR].index_temp_celsius,
+                 left_thermal_warning ? "true" : "false",
                  thermal_data[RIGHT_MOTOR].motor_i2t_percent,
                  thermal_data[RIGHT_MOTOR].drive_temp_celsius,
                  thermal_data[RIGHT_MOTOR].core_temp_celsius,
+                 thermal_data[RIGHT_MOTOR].index_temp_celsius,
+                 right_thermal_warning ? "true" : "false",
                  (thermal_data[LEFT_MOTOR].data_valid && thermal_data[RIGHT_MOTOR].data_valid) ? "true" : "false",
                  get_torque_constant(LEFT_MOTOR),
                  get_torque_constant(RIGHT_MOTOR));

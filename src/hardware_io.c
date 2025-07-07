@@ -125,6 +125,16 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     }
     thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
 
+    // Read Index temperature - 0x2038:1 (in m°C)
+    size = sizeof(uint32_t);
+    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
+    if (ret <= 0)
+    {
+        thermal_data->data_valid = false;
+        return false;
+    }
+    thermal_data->index_temp_celsius = (int32_t)temp_value / 1000.0f;
+
     thermal_data->current_actual_A = 0.0f;
     thermal_data->data_valid = true;
 

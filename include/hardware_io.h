@@ -10,6 +10,7 @@ typedef struct
     uint8_t motor_i2t_percent;
     float drive_temp_celsius;
     float core_temp_celsius;
+    float index_temp_celsius;       // Index temperature (0x2038:01)
     float torque_constant_mNm_per_A;
     float current_actual_A;
     bool data_valid;
