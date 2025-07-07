@@ -132,9 +132,10 @@ void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", tm_info);
 
-    // Add milliseconds
-    char full_timestamp[40];
-    snprintf(full_timestamp, sizeof(full_timestamp), "%s.%03ldZ", timestamp, ts.tv_nsec / 1000000);
+    // Add milliseconds (ensure value is in valid range 0-999)
+    char full_timestamp[64];
+    long milliseconds = (ts.tv_nsec / 1000000) % 1000;
+    snprintf(full_timestamp, sizeof(full_timestamp), "%s.%03ldZ", timestamp, milliseconds);
 
     // Build JSON message
     char json_buffer[1536];

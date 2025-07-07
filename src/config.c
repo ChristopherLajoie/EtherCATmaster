@@ -49,6 +49,10 @@ static const ConfigMapping config_map[] = {
      sizeof(((MotorConfig*)0)->hmi_broadcast_ip)},
     {"realtime_hmi", "broadcast_port", TYPE_INT, offsetof(MotorConfig, hmi_broadcast_port), 0},
     {"realtime_hmi", "broadcast_interval_ms", TYPE_INT, offsetof(MotorConfig, hmi_broadcast_interval_ms), 0},
+
+    // I2t protection parameters
+    {"i2t_protection", "peak_time_ms", TYPE_UINT32, offsetof(MotorConfig, i2t_peak_time_ms), 0},
+    {"i2t_protection", "thermal_limit", TYPE_UINT32, offsetof(MotorConfig, i2t_thermal_limit), 0},
 };
 
 void calculate_derived_config_values(void)
@@ -84,6 +88,10 @@ bool load_config(const char* filename)
     g_config.hmi_broadcast_ip[sizeof(g_config.hmi_broadcast_ip) - 1] = '\0';
     g_config.hmi_broadcast_port = 9999;
     g_config.hmi_broadcast_interval_ms = 100;  // Default 10Hz (100ms)
+
+    // I2t protection defaults
+    g_config.i2t_peak_time_ms = 5000;      // Default 5 seconds peak time
+    g_config.i2t_thermal_limit = 100;      // Default 100% thermal limit
 
     if (ini_parse(filename, config_handler, &g_config) < 0)
     {

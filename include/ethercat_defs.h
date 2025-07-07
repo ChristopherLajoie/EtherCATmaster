@@ -45,4 +45,8 @@
 #define JOYSTICK_CENTER g_config.joystick_center
 #define JOYSTICK_DEADZONE g_config.joystick_deadzone
 
+/* I2t protection macros */
+#define I2T_PEAK_TIME_MS g_config.i2t_peak_time_ms
+#define I2T_THERMAL_LIMIT g_config.i2t_thermal_limit
+
 #endif

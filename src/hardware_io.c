@@ -234,7 +234,9 @@ static bool configure_motion_parameters(int slave)
                                      {0x6083, 0, sizeof(uint32_t), "Profile acceleration", DEFAULT_PROFILE_ACCEL},
                                      {0x6084, 0, sizeof(uint32_t), "Profile deceleration", DEFAULT_PROFILE_DECEL},
                                      {0x6085, 0, sizeof(uint32_t), "Quick stop deceleration", DEFAULT_QUICK_STOP_DECEL},
-                                     {0x6086, 0, sizeof(int16_t), "Motion profile type", DEFAULT_PROFILE_TYPE}};
+                                     {0x6086, 0, sizeof(int16_t), "Motion profile type", DEFAULT_PROFILE_TYPE},
+                                     {0x200A, 2, sizeof(uint32_t), "I2t peak time (ms)", I2T_PEAK_TIME_MS},
+                                     {0x2038, 0x0B, sizeof(uint32_t), "I2t thermal limit", I2T_THERMAL_LIMIT}};
 
     for (size_t i = 0; i < sizeof(params) / sizeof(params[0]); i++)
     {
