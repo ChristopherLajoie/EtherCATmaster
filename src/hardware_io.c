@@ -40,7 +40,7 @@ static bool g_torque_constants_valid[MAX_MOTORS] = {false};
 
 uint8_t get_cia402_state(uint16_t statusword)
 {
-    uint16_t state_bits = statusword & 0x6F;  
+    uint16_t state_bits = statusword & 0x6F;
 
     if ((state_bits & 0x4F) == 0x00)
         return 0x00;  // Not Ready to Switch On
@@ -115,8 +115,7 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     int ret;
     int size;
     uint32_t temp_value;
-    float temp_float_value;
-    //uint8_t xx;
+    float raw_temp_data;
 
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
@@ -148,18 +147,35 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
 
     // Read Index temperature - 0x2038:1 (in m°C)
-    size = sizeof(float);
-    // ret = 1;
-    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &temp_float_value, EC_TIMEOUTRXM);
+    //size = sizeof(float);
+    size = sizeof(uint32_t);
+    ret = 1;
+    // ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &temp_float_value, EC_TIMEOUTRXM);
+    if (ret <= 0)
+    {
+        thermal_data->data_valid = false;
+        return false;
+    }
+    // printf("Temperature = %f\n", temp_float_value);
+
+    /*
+    // ret = ec_SDOread(slave, 0x2038, 11, FALSE, &size, &temp_float_value, EC_TIMEOUTRXM);
+    if (ret <= 0)
+    {
+        thermal_data->data_valid = false;
+        return false;
+    }
+    // printf("upper = %f\n", temp_float_value);
+    ret = ec_SDOread(slave, 0x2038, 12, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
         return false;
     }
     // temp_float_value = 0.0f;
-    printf("Temperature = %f\n", temp_float_value);
+    printf("lower = %f\n", raw_temp_data);
     // thermal_data->index_temp_celsius = (float)temp_float_value;
-
+    */
     thermal_data->current_actual_A = 0.0f;
     thermal_data->data_valid = true;
 
@@ -272,7 +288,8 @@ static bool configure_motion_and_thermal_parameters(int slave)
                                      {0x6086, 0, sizeof(int16_t), "Motion profile type", DEFAULT_PROFILE_TYPE},
                                      {0x200A, 2, sizeof(uint32_t), "I2t peak time (ms)", I2T_PEAK_TIME_MS},
                                      {0x2038, 2, sizeof(uint8_t), "Internal analog input", 0},
-                                     {0x2038, 0x0B, sizeof(float), "I2t thermal limit", I2T_THERMAL_LIMIT}};
+                                     //{0x2038, 11, sizeof(float), "I2t thermal limit upper", 100.0f}};
+                                     {0x2038, 12, sizeof(float), "I2t thermal limit lower", 0.0f}};
 
     for (size_t i = 0; i < sizeof(params) / sizeof(params[0]); i++)
     {
@@ -619,37 +636,37 @@ bool configure_i2t_protection(int slave, uint8_t i2t_mode)
 
 bool read_fault_codes(int slave, fault_codes_t* fault_codes)
 {
-    int ret;
-    int size;
+    int ret, size;
 
     if (!fault_codes)
         return false;
 
     fault_codes->data_valid = true;
+    memset(fault_codes->manufacturer_fault, 0, sizeof(fault_codes->manufacturer_fault));
 
-    // Read CIA-402 Error Code (0x603F)
+    // Read CIA-402 Error Code (0x603F) - this is still uint16_t
     size = sizeof(uint16_t);
     ret = ec_SDOread(slave, 0x603F, 0, FALSE, &size, &fault_codes->cia402_error_code, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
-        printf("Warning: Failed to read CIA-402 error code (0x603F) from slave %d\n", slave);
         fault_codes->cia402_error_code = 0;
         fault_codes->data_valid = false;
     }
 
-    // Read Manufacturer Fault Code (0x203F)
-    size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x203F, 0, FALSE, &size, &fault_codes->manufacturer_fault, EC_TIMEOUTRXM);
+    // Read Manufacturer Fault Code (0x203F) - CORRECTED: This is STRING(8)
+    size = 8;  // 8 bytes for STRING(8)
+    ret = ec_SDOread(slave, 0x203F, 1, FALSE, &size, fault_codes->manufacturer_fault, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
-        printf("Warning: Failed to read manufacturer fault code (0x203F) from slave %d\n", slave);
-        fault_codes->manufacturer_fault = 0;
+        strncpy(fault_codes->manufacturer_fault, "UNKNOWN", 8);
         fault_codes->data_valid = false;
     }
 
+    // Ensure null termination
+    fault_codes->manufacturer_fault[8] = '\0';
+
     return fault_codes->data_valid;
 }
-
 bool init_torque_constants(void)
 {
     bool all_success = true;

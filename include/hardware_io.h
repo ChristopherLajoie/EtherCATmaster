@@ -17,8 +17,8 @@ typedef struct
 } thermal_data_t;
 
 typedef struct {
-    uint16_t cia402_error_code;      // 0x603F
-    uint32_t manufacturer_fault;     // 0x203F  
+    uint16_t cia402_error_code;      // 0x603F 
+    char manufacturer_fault[9];      // 0x203F 
     bool data_valid;
 } fault_codes_t;
 

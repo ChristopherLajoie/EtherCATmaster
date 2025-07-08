@@ -238,42 +238,38 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
 
         if (state->last_reported_fault_id != current_state)
         {
-            printf("\nMOTOR %d FAULT DETECTED\n", motor_index);
-            printf("CIA-402 State: %s (0x%02X)\n", get_cia402_state_string(current_state), current_state);
-
+            printf("Motor %d Fault detected: %s\n", motor_index, get_cia402_state_string(current_state));
+            
             // Print detailed statusword breakdown
             printf("Statusword: 0x%04X = ", statusword);
-            for (int i = 15; i >= 0; i--)
-            {
+            for (int i = 15; i >= 0; i--) {
                 printf("%d", (statusword >> i) & 1);
-                if (i % 4 == 0 && i > 0)
-                    printf(" ");
+                if (i % 4 == 0 && i > 0) printf(" ");
             }
             printf("\n");
             printf("  Fault: %s, Ready: %s, Switched On: %s, Op Enabled: %s\n",
                    (statusword & SW_FAULT_BIT) ? "YES" : "NO",
-                   (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO",
+                   (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO", 
                    (statusword & SW_SWITCHED_ON_BIT) ? "YES" : "NO",
                    (statusword & SW_OPERATION_ENABLED_BIT) ? "YES" : "NO");
-
-            // Read the detailed fault codes
+            
+            // Read the detailed fault codes - CORRECTED
             fault_codes_t fault_codes;
             int slave_index = g_motor_control.slave_indices[motor_index];
             if (read_fault_codes(slave_index, &fault_codes))
             {
                 printf("CIA-402 Error Code: 0x%04X\n", fault_codes.cia402_error_code);
-                printf("Manufacturer Fault: 0x%08X\n", fault_codes.manufacturer_fault);
-
-                // Log with enhanced fault information
-                char detailed_description[256];
-                snprintf(detailed_description,
-                         sizeof(detailed_description),
-                         "%s | CIA-402: 0x%04X | Mfg: 0x%08X",
-                         get_cia402_state_string(current_state),
-                         fault_codes.cia402_error_code,
-                         fault_codes.manufacturer_fault);
-
-                log_motor_fault(motor_index, fault_codes.cia402_error_code, detailed_description);
+                printf("Manufacturer Fault String: \"%s\"\n", fault_codes.manufacturer_fault);
+                
+                // Enhanced logging with corrected fault information
+                char enhanced_desc[256];
+                snprintf(enhanced_desc, sizeof(enhanced_desc),
+                        "%s | 0x603F: 0x%04X | 0x203F: \"%s\"",
+                        get_cia402_state_string(current_state),
+                        fault_codes.cia402_error_code,
+                        fault_codes.manufacturer_fault);
+                
+                log_motor_fault(motor_index, fault_codes.cia402_error_code, enhanced_desc);
             }
             else
             {
@@ -281,9 +277,9 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
                 log_motor_fault(motor_index, current_state, get_cia402_state_string(current_state));
             }
 
+            printf("Starting fault reset sequence\n");
             state->last_reported_fault_id = current_state;
             state->fault_reset_attempts = 0;
-            printf("Starting fault reset sequence\n");
         }
 
         // Keep existing fault reset logic
@@ -308,12 +304,10 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
         reset_step = (reset_step + 1) % 4;
         state->fault_reset_attempts++;
 
-        // Extended timeout for complex faults
         if (state->fault_reset_attempts > 60)
         {
-            printf("Motor %d fault reset unsuccessful after %d attempts, proceeding to init\n",
-                   motor_index,
-                   state->fault_reset_attempts);
+            printf("Motor %d fault reset unsuccessful after %d attempts, proceeding to init\n", 
+                   motor_index, state->fault_reset_attempts);
             state->fault_reset_attempts = 0;
             state->state = STATE_INIT;
             state->init_step = 0;
@@ -533,6 +527,15 @@ void* motor_control_cyclic_task(void* arg)
                     case STATE_OPERATIONAL:
                     {
                         uint16_t controlword = CW_ENABLE;
+
+                        if (txpdo[motor]->statusword & SW_FAULT_BIT)
+                        {
+                            printf("Motor %d: Fault detected during operation\n", motor);
+                            if (handle_fault_state(rxpdo[motor], txpdo[motor]->statusword, &g_motor_state[motor], motor))
+                            {
+                                break;  // Exit the state handler, fault is being handled
+                            }
+                        }
 
                         // Check for state mismatch
                         if (!(txpdo[motor]->statusword & SW_OPERATION_ENABLED_BIT))
