@@ -16,6 +16,12 @@ typedef struct
     bool data_valid;
 } thermal_data_t;
 
+typedef struct {
+    uint16_t cia402_error_code;      // 0x603F
+    uint32_t manufacturer_fault;     // 0x203F  
+    bool data_valid;
+} fault_codes_t;
+
 typedef struct
 {
     uint16_t code;
@@ -63,5 +69,6 @@ int read_i2t_protection_mode(int slave);
 bool init_torque_constants(void);
 float get_torque_constant(int motor_index);
 bool is_torque_constant_valid(int motor_index);
+bool read_fault_codes(int slave, fault_codes_t* fault_codes);
 
 #endif

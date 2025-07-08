@@ -238,15 +238,55 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
 
         if (state->last_reported_fault_id != current_state)
         {
-            printf("Motor %d Fault detected: %s\n", motor_index, get_cia402_state_string(current_state));
-            printf("Starting reset sequence\n");
+            printf("\nMOTOR %d FAULT DETECTED\n", motor_index);
+            printf("CIA-402 State: %s (0x%02X)\n", get_cia402_state_string(current_state), current_state);
 
-            log_motor_fault(motor_index, current_state, get_cia402_state_string(current_state));
+            // Print detailed statusword breakdown
+            printf("Statusword: 0x%04X = ", statusword);
+            for (int i = 15; i >= 0; i--)
+            {
+                printf("%d", (statusword >> i) & 1);
+                if (i % 4 == 0 && i > 0)
+                    printf(" ");
+            }
+            printf("\n");
+            printf("  Fault: %s, Ready: %s, Switched On: %s, Op Enabled: %s\n",
+                   (statusword & SW_FAULT_BIT) ? "YES" : "NO",
+                   (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO",
+                   (statusword & SW_SWITCHED_ON_BIT) ? "YES" : "NO",
+                   (statusword & SW_OPERATION_ENABLED_BIT) ? "YES" : "NO");
+
+            // Read the detailed fault codes
+            fault_codes_t fault_codes;
+            int slave_index = g_motor_control.slave_indices[motor_index];
+            if (read_fault_codes(slave_index, &fault_codes))
+            {
+                printf("CIA-402 Error Code: 0x%04X\n", fault_codes.cia402_error_code);
+                printf("Manufacturer Fault: 0x%08X\n", fault_codes.manufacturer_fault);
+
+                // Log with enhanced fault information
+                char detailed_description[256];
+                snprintf(detailed_description,
+                         sizeof(detailed_description),
+                         "%s | CIA-402: 0x%04X | Mfg: 0x%08X",
+                         get_cia402_state_string(current_state),
+                         fault_codes.cia402_error_code,
+                         fault_codes.manufacturer_fault);
+
+                log_motor_fault(motor_index, fault_codes.cia402_error_code, detailed_description);
+            }
+            else
+            {
+                printf("Could not read detailed fault codes\n");
+                log_motor_fault(motor_index, current_state, get_cia402_state_string(current_state));
+            }
 
             state->last_reported_fault_id = current_state;
             state->fault_reset_attempts = 0;
+            printf("Starting fault reset sequence\n");
         }
 
+        // Keep existing fault reset logic
         static int reset_step = 0;
 
         switch (reset_step)
@@ -268,10 +308,12 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
         reset_step = (reset_step + 1) % 4;
         state->fault_reset_attempts++;
 
-        // After significant number of cycles, give up and proceed to initialization
-        if (state->fault_reset_attempts > 40)
+        // Extended timeout for complex faults
+        if (state->fault_reset_attempts > 60)
         {
-            printf("Motor %d reset not succeeding, proceeding to initialization\n", motor_index);
+            printf("Motor %d fault reset unsuccessful after %d attempts, proceeding to init\n",
+                   motor_index,
+                   state->fault_reset_attempts);
             state->fault_reset_attempts = 0;
             state->state = STATE_INIT;
             state->init_step = 0;
@@ -515,7 +557,7 @@ void* motor_control_cyclic_task(void* arg)
                                     g_motor_state[motor].target_velocity = velocities.right_velocity;
                                 }
                             }
-                            else if (!enable || !estop) //estop logic inversed
+                            else if (!enable || !estop)  // estop logic inversed
                             {
                                 // Enable switched off
                                 rxpdo[motor]->controlword = CW_QUICKSTOP;

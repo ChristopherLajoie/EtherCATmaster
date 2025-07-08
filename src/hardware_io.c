@@ -40,7 +40,27 @@ static bool g_torque_constants_valid[MAX_MOTORS] = {false};
 
 uint8_t get_cia402_state(uint16_t statusword)
 {
-    return statusword & STATUS_STATE_MASK;
+    uint16_t state_bits = statusword & 0x6F;  
+
+    if ((state_bits & 0x4F) == 0x00)
+        return 0x00;  // Not Ready to Switch On
+    if ((state_bits & 0x4F) == 0x40)
+        return 0x40;  // Switch On Disabled
+    if ((state_bits & 0x6F) == 0x21)
+        return 0x21;  // Ready to Switch On
+    if ((state_bits & 0x6F) == 0x23)
+        return 0x23;  // Switched On
+    if ((state_bits & 0x6F) == 0x27)
+        return 0x27;  // Operation Enabled
+    if ((state_bits & 0x6F) == 0x07)
+        return 0x07;  // Quick Stop Active
+    if ((state_bits & 0x4F) == 0x0F)
+        return 0x0F;  // Fault Reaction Active
+    if ((state_bits & 0x4F) == 0x08)
+        return 0x08;  // Fault
+
+    printf("Unknown CIA-402 state: statusword=0x%04X, state_bits=0x%02X\n", statusword, state_bits);
+    return 0xFF;
 }
 
 const char* get_cia402_state_string(uint16_t state)
@@ -96,7 +116,7 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     int size;
     uint32_t temp_value;
     float temp_float_value;
-    uint8_t xx;
+    //uint8_t xx;
 
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
@@ -126,23 +146,23 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
         return false;
     }
     thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
-    
+
     // Read Index temperature - 0x2038:1 (in m°C)
     size = sizeof(float);
-    //ret = 1;
+    // ret = 1;
     ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &temp_float_value, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
         return false;
     }
-    //temp_float_value = 0.0f;
+    // temp_float_value = 0.0f;
     printf("Temperature = %f\n", temp_float_value);
-    //thermal_data->index_temp_celsius = (float)temp_float_value;
-    
+    // thermal_data->index_temp_celsius = (float)temp_float_value;
+
     thermal_data->current_actual_A = 0.0f;
     thermal_data->data_valid = true;
-    
+
     return true;
 }
 
@@ -595,6 +615,39 @@ bool configure_i2t_protection(int slave, uint8_t i2t_mode)
         return false;
     }
     return true;
+}
+
+bool read_fault_codes(int slave, fault_codes_t* fault_codes)
+{
+    int ret;
+    int size;
+
+    if (!fault_codes)
+        return false;
+
+    fault_codes->data_valid = true;
+
+    // Read CIA-402 Error Code (0x603F)
+    size = sizeof(uint16_t);
+    ret = ec_SDOread(slave, 0x603F, 0, FALSE, &size, &fault_codes->cia402_error_code, EC_TIMEOUTRXM);
+    if (ret <= 0)
+    {
+        printf("Warning: Failed to read CIA-402 error code (0x603F) from slave %d\n", slave);
+        fault_codes->cia402_error_code = 0;
+        fault_codes->data_valid = false;
+    }
+
+    // Read Manufacturer Fault Code (0x203F)
+    size = sizeof(uint32_t);
+    ret = ec_SDOread(slave, 0x203F, 0, FALSE, &size, &fault_codes->manufacturer_fault, EC_TIMEOUTRXM);
+    if (ret <= 0)
+    {
+        printf("Warning: Failed to read manufacturer fault code (0x203F) from slave %d\n", slave);
+        fault_codes->manufacturer_fault = 0;
+        fault_codes->data_valid = false;
+    }
+
+    return fault_codes->data_valid;
 }
 
 bool init_torque_constants(void)
