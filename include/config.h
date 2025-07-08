@@ -70,7 +70,7 @@ typedef struct
 
     // I2t protection parameters
     uint32_t i2t_peak_time_ms;      // Peak time (0x200A:2) in milliseconds
-    uint32_t i2t_thermal_limit;     // Thermal limit (0x2038:0B)
+    float i2t_thermal_limit;     // Thermal limit (0x2038:0B)
 } MotorConfig;
 
 extern MotorConfig g_config;

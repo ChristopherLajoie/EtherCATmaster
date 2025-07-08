@@ -95,6 +95,8 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     int ret;
     int size;
     uint32_t temp_value;
+    float temp_float_value;
+    uint8_t xx;
 
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
@@ -124,20 +126,23 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
         return false;
     }
     thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
-
+    
     // Read Index temperature - 0x2038:1 (in m°C)
-    size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
+    size = sizeof(float);
+    //ret = 1;
+    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &temp_float_value, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
         return false;
     }
-    thermal_data->index_temp_celsius = (int32_t)temp_value / 1000.0f;
-
+    //temp_float_value = 0.0f;
+    printf("Temperature = %f\n", temp_float_value);
+    //thermal_data->index_temp_celsius = (float)temp_float_value;
+    
     thermal_data->current_actual_A = 0.0f;
     thermal_data->data_valid = true;
-
+    
     return true;
 }
 
@@ -235,7 +240,7 @@ static bool configure_txpdo_mappings(int slave)
     return true;
 }
 
-static bool configure_motion_parameters(int slave)
+static bool configure_motion_and_thermal_parameters(int slave)
 {
     int ret;
 
@@ -246,7 +251,8 @@ static bool configure_motion_parameters(int slave)
                                      {0x6085, 0, sizeof(uint32_t), "Quick stop deceleration", DEFAULT_QUICK_STOP_DECEL},
                                      {0x6086, 0, sizeof(int16_t), "Motion profile type", DEFAULT_PROFILE_TYPE},
                                      {0x200A, 2, sizeof(uint32_t), "I2t peak time (ms)", I2T_PEAK_TIME_MS},
-                                     {0x2038, 0x0B, sizeof(uint32_t), "I2t thermal limit", I2T_THERMAL_LIMIT}};
+                                     {0x2038, 2, sizeof(uint8_t), "Internal analog input", 0},
+                                     {0x2038, 0x0B, sizeof(float), "I2t thermal limit", I2T_THERMAL_LIMIT}};
 
     for (size_t i = 0; i < sizeof(params) / sizeof(params[0]); i++)
     {
@@ -299,7 +305,7 @@ bool configure_pdo_mappings(int slave)
         }
     }
 
-    if (!configure_motion_parameters(slave))
+    if (!configure_motion_and_thermal_parameters(slave))
     {
         return false;
     }
