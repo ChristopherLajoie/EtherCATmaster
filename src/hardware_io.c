@@ -114,8 +114,9 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
 {
     int ret;
     int size;
+    uint8_t value;
     uint32_t temp_value;
-    float raw_temp_data;
+    uint32_t raw_temp_data;
 
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
@@ -138,7 +139,7 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
 
     // Read Core-board temperature - 0x2030:1 (in m°C)
     size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
+    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &uint32_t, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
@@ -147,25 +148,37 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
 
     // Read Index temperature - 0x2038:1 (in m°C)
-    //size = sizeof(float);
+    size = sizeof(float);
+    //size = sizeof(uint32_t);
+    //ret = 1;
+
+    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
+    if (ret <= 0)
+    {
+        thermal_data->data_valid = false;
+        return false;
+    }
+
+    //printf("subindex 1 = %d\n", raw_temp_data);
     size = sizeof(uint32_t);
     ret = 1;
-    // ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &temp_float_value, EC_TIMEOUTRXM);
+    //ret = ec_SDOread(slave, 0x2038, 3, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
         return false;
     }
-    // printf("Temperature = %f\n", temp_float_value);
 
-    /*
-    // ret = ec_SDOread(slave, 0x2038, 11, FALSE, &size, &temp_float_value, EC_TIMEOUTRXM);
+    //printf("subindex 3 = %d\n", temp_value);
+/*
+    printf("size before = %d\n", size);
+    ret = ec_SDOread(slave, 0x2038, 11, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
         return false;
     }
-    // printf("upper = %f\n", temp_float_value);
+    printf("size after = %d\n", size);
     ret = ec_SDOread(slave, 0x2038, 12, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
@@ -173,11 +186,9 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
         return false;
     }
     // temp_float_value = 0.0f;
-    printf("lower = %f\n", raw_temp_data);
+    //printf("lower = %f\n", raw_temp_data);
     // thermal_data->index_temp_celsius = (float)temp_float_value;
     */
-    thermal_data->current_actual_A = 0.0f;
-    thermal_data->data_valid = true;
 
     return true;
 }
@@ -249,7 +260,7 @@ static bool configure_txpdo_mappings(int slave)
     {
         return false;
     }
-
+    
     for (size_t i = 0; i < sizeof(tx_mappings) / sizeof(tx_mappings[0]); i++)
     {
         txpdo_count++;
@@ -287,9 +298,9 @@ static bool configure_motion_and_thermal_parameters(int slave)
                                      {0x6085, 0, sizeof(uint32_t), "Quick stop deceleration", DEFAULT_QUICK_STOP_DECEL},
                                      {0x6086, 0, sizeof(int16_t), "Motion profile type", DEFAULT_PROFILE_TYPE},
                                      {0x200A, 2, sizeof(uint32_t), "I2t peak time (ms)", I2T_PEAK_TIME_MS},
-                                     {0x2038, 2, sizeof(uint8_t), "Internal analog input", 0},
+                                     {0x2038, 2, sizeof(uint8_t), "Internal analog input", 0}};
                                      //{0x2038, 11, sizeof(float), "I2t thermal limit upper", 100.0f}};
-                                     {0x2038, 12, sizeof(float), "I2t thermal limit lower", 0.0f}};
+                                     //{0x2038, 12, sizeof(float), "I2t thermal limit lower", 0.0f}};
 
     for (size_t i = 0; i < sizeof(params) / sizeof(params[0]); i++)
     {

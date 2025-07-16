@@ -176,7 +176,10 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
                right_target,
                left_torque,
                right_torque);
-
+        
+        printf("/n");
+        printf("Statusword: 0x%04X = ", txpdo[0]->statusword);
+        printf("/n");
         for (int motor = 0; motor < 2; motor++)
         {
             uint16_t current_state = get_cia402_state(txpdo[motor]->statusword);
@@ -240,13 +243,13 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
         {
             printf("Motor %d Fault detected: %s\n", motor_index, get_cia402_state_string(current_state));
             
-            // Print detailed statusword breakdown
+            /*// Print detailed statusword breakdown
             printf("Statusword: 0x%04X = ", statusword);
             for (int i = 15; i >= 0; i--) {
                 printf("%d", (statusword >> i) & 1);
                 if (i % 4 == 0 && i > 0) printf(" ");
             }
-            printf("\n");
+            printf("\n");*/
             printf("  Fault: %s, Ready: %s, Switched On: %s, Op Enabled: %s\n",
                    (statusword & SW_FAULT_BIT) ? "YES" : "NO",
                    (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO", 
@@ -583,6 +586,7 @@ void* motor_control_cyclic_task(void* arg)
 
                                 controlword |= CW_NEW_VELOCITY_SETPOINT;
                                 g_motor_state[motor].new_setpoint_active = true;
+                                printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
                             else if (g_motor_state[motor].new_setpoint_active)
                             {
@@ -591,6 +595,7 @@ void* motor_control_cyclic_task(void* arg)
                                     controlword &= ~CW_NEW_VELOCITY_SETPOINT;
                                     g_motor_state[motor].new_setpoint_active = false;
                                 }
+                                printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
 
                             rxpdo[motor]->controlword = controlword;
@@ -604,6 +609,7 @@ void* motor_control_cyclic_task(void* arg)
             if (++log_interval >= g_config.log_interval_cycles)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
+                //printf("Statusword: 0x%04X = ", rxpdo[motor]->controlword)
                 log_motor_data(txpdo, g_motor_control.num_motors);
                 log_interval = 0;
             }
