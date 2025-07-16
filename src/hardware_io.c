@@ -114,9 +114,8 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
 {
     int ret;
     int size;
-    uint8_t value;
     uint32_t temp_value;
-    uint32_t raw_temp_data;
+    float raw_temp_data;
 
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
@@ -139,7 +138,7 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
 
     // Read Core-board temperature - 0x2030:1 (in m°C)
     size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &uint32_t, EC_TIMEOUTRXM);
+    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
@@ -149,46 +148,14 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
 
     // Read Index temperature - 0x2038:1 (in m°C)
     size = sizeof(float);
-    //size = sizeof(uint32_t);
-    //ret = 1;
-
-    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
-    if (ret <= 0)
-    {
-        thermal_data->data_valid = false;
-        return false;
-    }
-
-    //printf("subindex 1 = %d\n", raw_temp_data);
-    size = sizeof(uint32_t);
     ret = 1;
-    //ret = ec_SDOread(slave, 0x2038, 3, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret <= 0)
-    {
-        thermal_data->data_valid = false;
-        return false;
-    }
 
-    //printf("subindex 3 = %d\n", temp_value);
-/*
-    printf("size before = %d\n", size);
-    ret = ec_SDOread(slave, 0x2038, 11, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
+    //ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
         return false;
     }
-    printf("size after = %d\n", size);
-    ret = ec_SDOread(slave, 0x2038, 12, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
-    if (ret <= 0)
-    {
-        thermal_data->data_valid = false;
-        return false;
-    }
-    // temp_float_value = 0.0f;
-    //printf("lower = %f\n", raw_temp_data);
-    // thermal_data->index_temp_celsius = (float)temp_float_value;
-    */
 
     return true;
 }
@@ -566,7 +533,7 @@ bool read_torque_constant(int slave, float* torque_constant_mNm_per_A)
         return false;
     }
 
-    // Convert from µNm/A to mNm/A (divide by 1000)
+    // Convert from µNm/A to mNm/A
     *torque_constant_mNm_per_A = (int32_t)torque_constant_uNm_per_A / 1000.0f;
 
     return true;
@@ -655,7 +622,7 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
     fault_codes->data_valid = true;
     memset(fault_codes->manufacturer_fault, 0, sizeof(fault_codes->manufacturer_fault));
 
-    // Read CIA-402 Error Code (0x603F) - this is still uint16_t
+    // Read CIA-402 Error Code (0x603F)
     size = sizeof(uint16_t);
     ret = ec_SDOread(slave, 0x603F, 0, FALSE, &size, &fault_codes->cia402_error_code, EC_TIMEOUTRXM);
     if (ret <= 0)
@@ -664,8 +631,7 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
         fault_codes->data_valid = false;
     }
 
-    // Read Manufacturer Fault Code (0x203F) - CORRECTED: This is STRING(8)
-    size = 8;  // 8 bytes for STRING(8)
+    size = 8;  
     ret = ec_SDOread(slave, 0x203F, 1, FALSE, &size, fault_codes->manufacturer_fault, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
@@ -673,7 +639,6 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
         fault_codes->data_valid = false;
     }
 
-    // Ensure null termination
     fault_codes->manufacturer_fault[8] = '\0';
 
     return fault_codes->data_valid;

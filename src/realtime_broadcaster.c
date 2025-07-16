@@ -62,12 +62,10 @@ bool init_realtime_broadcaster(void)
         strncpy(g_broadcaster.broadcast_addresses[1], "10.42.0.255", 15);
         g_broadcaster.broadcast_addresses[1][15] = '\0';
         g_broadcaster.num_broadcast_addresses = 2;
-        printf("Real-time broadcaster configured for dual network (wlan0 + uap0)\n");
     } else if (strncmp(g_config.hmi_broadcast_ip, "10.42.0.255", 11) == 0) {
         strncpy(g_broadcaster.broadcast_addresses[1], "192.168.1.255", 15);
         g_broadcaster.broadcast_addresses[1][15] = '\0';
         g_broadcaster.num_broadcast_addresses = 2;
-        printf("Real-time broadcaster configured for dual network (uap0 + wlan0)\n");
     }
 
     printf("Broadcasting to %d address(es): ", g_broadcaster.num_broadcast_addresses);
