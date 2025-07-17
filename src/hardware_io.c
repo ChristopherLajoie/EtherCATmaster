@@ -150,12 +150,13 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     size = sizeof(float);
     ret = 1;
 
-    //ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
+    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
         thermal_data->data_valid = false;
         return false;
     }
+    thermal_data->index_temp_celsius = (int32_t)raw_temp_data;
 
     return true;
 }
@@ -266,8 +267,6 @@ static bool configure_motion_and_thermal_parameters(int slave)
                                      {0x6086, 0, sizeof(int16_t), "Motion profile type", DEFAULT_PROFILE_TYPE},
                                      {0x200A, 2, sizeof(uint32_t), "I2t peak time (ms)", I2T_PEAK_TIME_MS},
                                      {0x2038, 2, sizeof(uint8_t), "Internal analog input", 0}};
-                                     //{0x2038, 11, sizeof(float), "I2t thermal limit upper", 100.0f}};
-                                     //{0x2038, 12, sizeof(float), "I2t thermal limit lower", 0.0f}};
 
     for (size_t i = 0; i < sizeof(params) / sizeof(params[0]); i++)
     {

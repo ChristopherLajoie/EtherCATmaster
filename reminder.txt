@@ -1,0 +1,1 @@
+tail -F log/motor_control.log

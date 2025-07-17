@@ -177,6 +177,8 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    setvbuf(stdout, NULL, _IONBF, 0); 
+    
     while (g_motor_control.run)
     {
         usleep(SLEEP_INTERVAL_US);

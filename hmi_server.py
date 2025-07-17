@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Motor Control Real-time HMI Server with CSV Export and Current Display
+Motor Control Real-time HMI Server with CSV Export, Current Display, and Index Temperature
 
 Receives UDP broadcasts from motor control system and serves
 real-time data to web browsers via WebSockets, plus CSV file downloads.
@@ -55,21 +55,23 @@ class MotorHMIServer:
         # Get network interfaces
         self.network_interfaces = self._get_network_interfaces()
 
-        print(f"Motor HMI Server with CSV Export and Current Display")
+        print(f"Motor HMI Server with CSV Export, Current Display, and Index Temperature")
         print(f"Web interface: http://localhost:{web_port}")
         print(f"UDP listener: port {udp_port}")
         print(f"CSV files: {csv_path}")
-        print(f"Network interfaces detected: {', '.join([f'{iface}({ip})' for iface, ip in self.network_interfaces.items()])}")
+        print(
+            f"Network interfaces detected: {', '.join([f'{iface}({ip})' for iface, ip in self.network_interfaces.items()])}")
 
     def _get_network_interfaces(self):
         """Get available network interfaces and their IP addresses"""
         import subprocess
         import re
-        
+
         interfaces = {}
         try:
             # Run ifconfig to get interface information
-            result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+            result = subprocess.run(
+                ['ifconfig'], capture_output=True, text=True)
             if result.returncode == 0:
                 # Parse ifconfig output
                 current_interface = None
@@ -83,10 +85,10 @@ class MotorHMIServer:
                         if match:
                             ip = match.group(1)
                             interfaces[current_interface] = ip
-                            
+
         except Exception as e:
             print(f"Warning: Could not detect network interfaces: {e}")
-            
+
         return interfaces
 
     def start_udp_listener(self):
@@ -94,14 +96,17 @@ class MotorHMIServer:
         try:
             # Create UDP socket that listens on all interfaces
             self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            
+            self.udp_socket.setsockopt(
+                socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.udp_socket.setsockopt(
+                socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
             # Bind to all interfaces
             self.udp_socket.bind(('', self.udp_port))
             self.udp_socket.settimeout(1.0)
 
-            print(f"✓ UDP listener started on port {self.udp_port} (all interfaces)")
+            print(
+                f"✓ UDP listener started on port {self.udp_port} (all interfaces)")
             print(f"  Listening for broadcasts on:")
             for iface, ip in self.network_interfaces.items():
                 print(f"    {iface}: {ip}")
@@ -215,13 +220,13 @@ class MotorHMIServer:
         return csv_files
 
     def create_html_page(self):
-        """Create the enhanced HTML interface with current display"""
+        """Create the enhanced HTML interface with current display and index temperature"""
         html_content = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motor Control HMI - With Current Monitor</title>
+    <title>Motor Control HMI - With Current and Index Temperature Monitor</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
@@ -1006,6 +1011,17 @@ class MotorHMIServer:
                     y: d.thermal.right ? d.thermal.right.core_temp : 0
                 }));
                 
+                // NEW: Add Index Temperature for dual motor
+                const leftIndexTempData = dataHistory.map((d, index) => ({
+                    x: index,
+                    y: d.thermal.left ? d.thermal.left.index_temp : 0
+                }));
+                
+                const rightIndexTempData = dataHistory.map((d, index) => ({
+                    x: index,
+                    y: d.thermal.right ? d.thermal.right.index_temp : 0
+                }));
+                
                 i2tChart.data.datasets = [
                     {
                         label: 'Left Motor I²t',
@@ -1031,6 +1047,7 @@ class MotorHMIServer:
                     }
                 ];
                 
+                // UPDATED: Include Index Temperature in dual motor display
                 temperatureChart.data.datasets = [
                     {
                         label: 'Left Drive Temp',
@@ -1075,6 +1092,28 @@ class MotorHMIServer:
                         borderWidth: 2,
                         pointRadius: 1,
                         pointHoverRadius: 3
+                    },
+                    {
+                        label: 'Left Index Temp',
+                        data: leftIndexTempData,
+                        borderColor: '#27ae60',
+                        backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                        fill: false,
+                        tension: 0.1,
+                        borderWidth: 2,
+                        pointRadius: 1,
+                        pointHoverRadius: 3
+                    },
+                    {
+                        label: 'Right Index Temp',
+                        data: rightIndexTempData,
+                        borderColor: '#e67e22',
+                        backgroundColor: 'rgba(230, 126, 34, 0.1)',
+                        fill: false,
+                        tension: 0.1,
+                        borderWidth: 2,
+                        pointRadius: 1,
+                        pointHoverRadius: 3
                     }
                 ];
             } else {
@@ -1093,6 +1132,12 @@ class MotorHMIServer:
                     y: d.thermal ? d.thermal.core_temp : 0
                 }));
                 
+                // NEW: Add Index Temperature for single motor
+                const indexTempData = dataHistory.map((d, index) => ({
+                    x: index,
+                    y: d.thermal ? d.thermal.index_temp : 0
+                }));
+                
                 i2tChart.data.datasets = [{
                     label: 'Motor I²t',
                     data: i2tData,
@@ -1105,6 +1150,7 @@ class MotorHMIServer:
                     pointHoverRadius: 3
                 }];
                 
+                // UPDATED: Include Index Temperature in single motor display  
                 temperatureChart.data.datasets = [
                     {
                         label: 'Drive Temperature',
@@ -1122,6 +1168,17 @@ class MotorHMIServer:
                         data: coreTempData,
                         borderColor: '#9b59b6',
                         backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                        fill: false,
+                        tension: 0.1,
+                        borderWidth: 2,
+                        pointRadius: 1,
+                        pointHoverRadius: 3
+                    },
+                    {
+                        label: 'Index Temperature',
+                        data: indexTempData,
+                        borderColor: '#27ae60',
+                        backgroundColor: 'rgba(39, 174, 96, 0.1)',
                         fill: false,
                         tension: 0.1,
                         borderWidth: 2,
@@ -1338,7 +1395,7 @@ class MotorHMIServer:
 
         await start_server
         print(f"✓ WebSocket server started on port {self.web_port + 1}")
-        print(f"✓ HMI server with CSV export and current monitoring ready!")
+        print(f"✓ HMI server with CSV export, current monitoring, and index temperature ready!")
         print(f"  Access from any of these addresses:")
         for iface, ip in self.network_interfaces.items():
             print(f"    {iface}: http://{ip}:{self.web_port}")
@@ -1370,7 +1427,7 @@ class MotorHMIServer:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Motor Control Real-time HMI Server with CSV Export and Current Display')
+        description='Motor Control Real-time HMI Server with CSV Export, Current Display, and Index Temperature')
     parser.add_argument('--port', type=int, default=8080,
                         help='Web server port')
     parser.add_argument('--udp-port', type=int,
