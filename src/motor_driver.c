@@ -131,12 +131,11 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
 
 void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocities_t velocities)
 {
-
     extern thermal_data_t g_thermal_data[MAX_MOTORS];
     extern pthread_mutex_t g_thermal_mutex;
-    
+
     static thermal_data_t thermal_data[MAX_MOTORS] = {0};
-    
+
     // Copy thermal data safely
     pthread_mutex_lock(&g_thermal_mutex);
     for (int motor = 0; motor < g_motor_control.num_motors && motor < MAX_MOTORS; motor++)
@@ -179,8 +178,6 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
                right_target,
                left_torque,
                right_torque);
-        
-        printf("Statusword: 0x%04X\n", txpdo[0]->statusword);
 
         for (int motor = 0; motor < 2; motor++)
         {
@@ -188,7 +185,7 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             const char* state_string = get_cia402_state_string(current_state);
             const char* motor_name = (motor == LEFT_MOTOR) ? "Left " : "Right";
 
-            printf("%s - Status: %-20s\n", motor_name, state_string);       
+            printf("  %s - Status: %-20s| SW: 0x%04X\n", motor_name, state_string, txpdo[motor]->statusword);
         }
     }
     else if (g_motor_control.num_motors == 1)
@@ -216,8 +213,7 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
 
         uint16_t current_state = get_cia402_state(txpdo[0]->statusword);
         const char* state_string = get_cia402_state_string(current_state);
-        printf("Status: %-20s", state_string);
-        printf("\n");
+        printf("Status: %-20s\n", state_string);
     }
 }
 
@@ -245,7 +241,7 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
         if (state->last_reported_fault_id != current_state)
         {
             printf("Motor %d Fault detected: %s\n", motor_index, get_cia402_state_string(current_state));
-            
+
             /*// Print detailed statusword breakdown
             printf("Statusword: 0x%04X = ", statusword);
             for (int i = 15; i >= 0; i--) {
@@ -255,10 +251,10 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
             printf("\n");*/
             printf("  Fault: %s, Ready: %s, Switched On: %s, Op Enabled: %s\n",
                    (statusword & SW_FAULT_BIT) ? "YES" : "NO",
-                   (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO", 
+                   (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO",
                    (statusword & SW_SWITCHED_ON_BIT) ? "YES" : "NO",
                    (statusword & SW_OPERATION_ENABLED_BIT) ? "YES" : "NO");
-            
+
             // Read the detailed fault codes - CORRECTED
             fault_codes_t fault_codes;
             int slave_index = g_motor_control.slave_indices[motor_index];
@@ -266,15 +262,16 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
             {
                 printf("CIA-402 Error Code: 0x%04X\n", fault_codes.cia402_error_code);
                 printf("Manufacturer Fault String: \"%s\"\n", fault_codes.manufacturer_fault);
-                
+
                 // Enhanced logging with corrected fault information
                 char enhanced_desc[256];
-                snprintf(enhanced_desc, sizeof(enhanced_desc),
-                        "%s | 0x603F: 0x%04X | 0x203F: \"%s\"",
-                        get_cia402_state_string(current_state),
-                        fault_codes.cia402_error_code,
-                        fault_codes.manufacturer_fault);
-                
+                snprintf(enhanced_desc,
+                         sizeof(enhanced_desc),
+                         "%s | 0x603F: 0x%04X | 0x203F: \"%s\"",
+                         get_cia402_state_string(current_state),
+                         fault_codes.cia402_error_code,
+                         fault_codes.manufacturer_fault);
+
                 log_motor_fault(motor_index, fault_codes.cia402_error_code, enhanced_desc);
             }
             else
@@ -312,8 +309,9 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
 
         if (state->fault_reset_attempts > 60)
         {
-            printf("Motor %d fault reset unsuccessful after %d attempts, proceeding to init\n", 
-                   motor_index, state->fault_reset_attempts);
+            printf("Motor %d fault reset unsuccessful after %d attempts, proceeding to init\n",
+                   motor_index,
+                   state->fault_reset_attempts);
             state->fault_reset_attempts = 0;
             state->state = STATE_INIT;
             state->init_step = 0;
@@ -589,7 +587,7 @@ void* motor_control_cyclic_task(void* arg)
 
                                 controlword |= CW_NEW_VELOCITY_SETPOINT;
                                 g_motor_state[motor].new_setpoint_active = true;
-                                //printf("mode of operation = %d", txpdo[motor]->op_mode_display);
+                                // printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
                             else if (g_motor_state[motor].new_setpoint_active)
                             {
@@ -598,7 +596,7 @@ void* motor_control_cyclic_task(void* arg)
                                     controlword &= ~CW_NEW_VELOCITY_SETPOINT;
                                     g_motor_state[motor].new_setpoint_active = false;
                                 }
-                                //printf("mode of operation = %d", txpdo[motor]->op_mode_display);
+                                // printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
 
                             rxpdo[motor]->controlword = controlword;

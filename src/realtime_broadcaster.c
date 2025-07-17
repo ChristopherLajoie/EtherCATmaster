@@ -41,16 +41,11 @@ static void* thermal_monitoring_thread(void* arg)
     {
         // Read thermal data for all motors
         thermal_data_t temp_data[MAX_MOTORS];
-        bool any_success = false;
         
         for (int i = 0; i < g_motor_control.num_motors; i++)
         {
             int slave_index = g_motor_control.slave_indices[i];
-            if (read_thermal_data(slave_index, &temp_data[i]))
-            {
-                any_success = true;
-            } 
-            else
+            if (!read_thermal_data(slave_index, &temp_data[i]))
             {
                 // Mark as invalid but preserve previous valid data
                 temp_data[i].data_valid = false;
