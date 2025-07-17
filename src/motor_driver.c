@@ -131,16 +131,19 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
 
 void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocities_t velocities)
 {
+
+    extern thermal_data_t g_thermal_data[MAX_MOTORS];
+    extern pthread_mutex_t g_thermal_mutex;
+    
     static thermal_data_t thermal_data[MAX_MOTORS] = {0};
-    for (int motor = 0; motor < g_motor_control.num_motors; motor++)
+    
+    // Copy thermal data safely
+    pthread_mutex_lock(&g_thermal_mutex);
+    for (int motor = 0; motor < g_motor_control.num_motors && motor < MAX_MOTORS; motor++)
     {
-        int slave_index = g_motor_control.slave_indices[motor];
-        if (!read_thermal_data(slave_index, &thermal_data[motor]))
-        {
-            thermal_data[motor].data_valid = false;
-            thermal_data[motor].current_actual_A = 0.0f;
-        }
+        thermal_data[motor] = g_thermal_data[motor];
     }
+    pthread_mutex_unlock(&g_thermal_mutex);
 
     if (g_motor_control.num_motors >= 2)
     {
@@ -169,7 +172,7 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
         calculate_current_from_torque(&thermal_data[LEFT_MOTOR], left_torque, LEFT_MOTOR);
         calculate_current_from_torque(&thermal_data[RIGHT_MOTOR], right_torque, RIGHT_MOTOR);
 
-        printf("L:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm\n",
+        printf("\nL:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm\n",
                left_actual,
                left_target,
                right_actual,
@@ -177,16 +180,15 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
                left_torque,
                right_torque);
         
-        printf("/n");
-        printf("Statusword: 0x%04X = ", txpdo[0]->statusword);
-        printf("/n");
+        printf("Statusword: 0x%04X\n", txpdo[0]->statusword);
+
         for (int motor = 0; motor < 2; motor++)
         {
             uint16_t current_state = get_cia402_state(txpdo[motor]->statusword);
             const char* state_string = get_cia402_state_string(current_state);
             const char* motor_name = (motor == LEFT_MOTOR) ? "Left " : "Right";
 
-            printf("  %s - Status: %-20s\n", motor_name, state_string);
+            printf("%s - Status: %-20s\n", motor_name, state_string);       
         }
     }
     else if (g_motor_control.num_motors == 1)
@@ -214,7 +216,8 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
 
         uint16_t current_state = get_cia402_state(txpdo[0]->statusword);
         const char* state_string = get_cia402_state_string(current_state);
-        printf("Status: %-20s\n", state_string);
+        printf("Status: %-20s", state_string);
+        printf("\n");
     }
 }
 
@@ -586,7 +589,7 @@ void* motor_control_cyclic_task(void* arg)
 
                                 controlword |= CW_NEW_VELOCITY_SETPOINT;
                                 g_motor_state[motor].new_setpoint_active = true;
-                                printf("mode of operation = %d", txpdo[motor]->op_mode_display);
+                                //printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
                             else if (g_motor_state[motor].new_setpoint_active)
                             {
@@ -595,7 +598,7 @@ void* motor_control_cyclic_task(void* arg)
                                     controlword &= ~CW_NEW_VELOCITY_SETPOINT;
                                     g_motor_state[motor].new_setpoint_active = false;
                                 }
-                                printf("mode of operation = %d", txpdo[motor]->op_mode_display);
+                                //printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
 
                             rxpdo[motor]->controlword = controlword;
@@ -609,7 +612,6 @@ void* motor_control_cyclic_task(void* arg)
             if (++log_interval >= g_config.log_interval_cycles)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
-                //printf("Statusword: 0x%04X = ", rxpdo[motor]->controlword)
                 log_motor_data(txpdo, g_motor_control.num_motors);
                 log_interval = 0;
             }

@@ -68,7 +68,7 @@ void calculate_derived_config_values(void)
     }
     else
     {
-        g_config.log_interval_cycles = 25;  // Default: log every 25 cycles (~100ms at 4ms cycle)
+        g_config.log_interval_cycles = 25;  // Default: log every 25 cycles 
     }
 }
 

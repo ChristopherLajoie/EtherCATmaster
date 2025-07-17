@@ -38,6 +38,12 @@ extern CANVariables can_vars;
 int init_can_interface(void);
 void stop_can_interface(void);
 
+// Low-level CAN functions (used by keyboard simulator)
+int initialize_can_bus(const char* interface);
+void shutdown_can_bus(void);
+int send_can_message(int can_id, uint8_t* data, int data_length);
+int receive_can_message(int can_id, uint8_t* data, int* data_length, int timeout_ms);
+
 int get_can_enable(void);
 int get_can_x_axis(void);
 int get_can_y_axis(void);

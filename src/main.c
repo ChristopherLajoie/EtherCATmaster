@@ -6,6 +6,10 @@
  * Actilink-S servo drive and controls it using a CAN interface.
  */
 
+#ifdef CAN_MODE_SIMULATION
+#include "keyboard_simulator.h"
+#endif
+
 #include "common.h"
 #include "hardware_io.h"
 #include "can_interface.h"
@@ -96,6 +100,9 @@ static bool initialize_ethercat(void)
 
 static void cleanup_resources(void)
 {
+#ifdef CAN_MODE_SIMULATION
+    stop_keyboard_simulator();
+#endif
     cleanup_data_logger();
     cleanup_realtime_broadcaster();
     ec_close();
@@ -133,6 +140,14 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+#ifdef CAN_MODE_SIMULATION
+    if (!init_keyboard_simulator())
+    {
+        cleanup_resources();
+        return EXIT_FAILURE;
+    }
+#endif
+
     if (!initialize_ethercat())
     {
         cleanup_resources();
@@ -162,6 +177,8 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    setvbuf(stdout, NULL, _IONBF, 0); 
+    
     while (g_motor_control.run)
     {
         usleep(SLEEP_INTERVAL_US);

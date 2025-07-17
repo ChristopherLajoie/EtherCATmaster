@@ -1,3 +1,5 @@
+// Add these declarations to realtime_broadcaster.h
+
 /**
  * @file realtime_broadcaster.h
  * @brief Real-time data broadcasting for web HMI
@@ -8,7 +10,9 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
 #include "motor_types.h"
+#include "hardware_io.h"  // For thermal_data_t
 
 typedef struct
 {
@@ -24,6 +28,10 @@ typedef struct
 } RealtimeBroadcaster;
 
 extern RealtimeBroadcaster g_broadcaster;
+
+// GLOBAL thermal data - accessible to all modules
+extern thermal_data_t g_thermal_data[MAX_MOTORS];
+extern pthread_mutex_t g_thermal_mutex;
 
 /**
  * @brief Initialize the real-time data broadcaster

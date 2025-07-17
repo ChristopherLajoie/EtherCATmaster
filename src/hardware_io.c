@@ -114,83 +114,75 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
 {
     int ret;
     int size;
-    uint8_t value;
     uint32_t temp_value;
-    uint32_t raw_temp_data;
+    float raw_temp_data;
+    bool partial_success = false;
+
+    thermal_data->motor_i2t_percent = 0;
+    thermal_data->drive_temp_celsius = 0.0f;
+    thermal_data->core_temp_celsius = 0.0f;
+    thermal_data->index_temp_celsius = 0.0f;
+    thermal_data->current_actual_A = 0.0f;
+    thermal_data->data_valid = false;
 
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
     ret = ec_SDOread(slave, 0x200A, 3, FALSE, &size, &thermal_data->motor_i2t_percent, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        partial_success = true;
+    }
+    else
+    {
+        thermal_data->motor_i2t_percent = 0;
+        printf("Warning: Failed to read I2t for slave %d\n", slave);
     }
 
     // Read Drive-module temperature - 0x2031:1 (in m°C)
     size = sizeof(uint32_t);
     ret = ec_SDOread(slave, 0x2031, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        thermal_data->drive_temp_celsius = (int32_t)temp_value / 1000.0f;
+        partial_success = true;
     }
-    thermal_data->drive_temp_celsius = (int32_t)temp_value / 1000.0f;
+    else
+    {
+        thermal_data->drive_temp_celsius = 0.0f;
+        printf("Warning: Failed to read drive temp for slave %d\n", slave);
+    }
 
     // Read Core-board temperature - 0x2030:1 (in m°C)
     size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &uint32_t, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
+        partial_success = true;
     }
-    thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
+    else
+    {
+        thermal_data->core_temp_celsius = 0.0f;
+        printf("Warning: Failed to read core temp for slave %d\n", slave);
+    }
 
-    // Read Index temperature - 0x2038:1 (in m°C)
     size = sizeof(float);
-    //size = sizeof(uint32_t);
-    //ret = 1;
-
     ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        thermal_data->index_temp_celsius = raw_temp_data;
+        partial_success = true;
+    }
+    else
+    {
+        thermal_data->index_temp_celsius = 0.0f;
+        printf("Warning: Failed to read index temp for slave %d\n", slave);
     }
 
-    //printf("subindex 1 = %d\n", raw_temp_data);
-    size = sizeof(uint32_t);
-    ret = 1;
-    //ret = ec_SDOread(slave, 0x2038, 3, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret <= 0)
-    {
-        thermal_data->data_valid = false;
-        return false;
-    }
+    // Mark as valid if we got at least some data
+    thermal_data->data_valid = partial_success;
 
-    //printf("subindex 3 = %d\n", temp_value);
-/*
-    printf("size before = %d\n", size);
-    ret = ec_SDOread(slave, 0x2038, 11, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
-    if (ret <= 0)
-    {
-        thermal_data->data_valid = false;
-        return false;
-    }
-    printf("size after = %d\n", size);
-    ret = ec_SDOread(slave, 0x2038, 12, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
-    if (ret <= 0)
-    {
-        thermal_data->data_valid = false;
-        return false;
-    }
-    // temp_float_value = 0.0f;
-    //printf("lower = %f\n", raw_temp_data);
-    // thermal_data->index_temp_celsius = (float)temp_float_value;
-    */
-
-    return true;
+    return partial_success;
 }
 
 static bool configure_rxpdo_mappings(int slave)
@@ -260,7 +252,7 @@ static bool configure_txpdo_mappings(int slave)
     {
         return false;
     }
-    
+
     for (size_t i = 0; i < sizeof(tx_mappings) / sizeof(tx_mappings[0]); i++)
     {
         txpdo_count++;
@@ -299,8 +291,6 @@ static bool configure_motion_and_thermal_parameters(int slave)
                                      {0x6086, 0, sizeof(int16_t), "Motion profile type", DEFAULT_PROFILE_TYPE},
                                      {0x200A, 2, sizeof(uint32_t), "I2t peak time (ms)", I2T_PEAK_TIME_MS},
                                      {0x2038, 2, sizeof(uint8_t), "Internal analog input", 0}};
-                                     //{0x2038, 11, sizeof(float), "I2t thermal limit upper", 100.0f}};
-                                     //{0x2038, 12, sizeof(float), "I2t thermal limit lower", 0.0f}};
 
     for (size_t i = 0; i < sizeof(params) / sizeof(params[0]); i++)
     {
@@ -566,7 +556,7 @@ bool read_torque_constant(int slave, float* torque_constant_mNm_per_A)
         return false;
     }
 
-    // Convert from µNm/A to mNm/A (divide by 1000)
+    // Convert from µNm/A to mNm/A
     *torque_constant_mNm_per_A = (int32_t)torque_constant_uNm_per_A / 1000.0f;
 
     return true;
@@ -655,7 +645,7 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
     fault_codes->data_valid = true;
     memset(fault_codes->manufacturer_fault, 0, sizeof(fault_codes->manufacturer_fault));
 
-    // Read CIA-402 Error Code (0x603F) - this is still uint16_t
+    // Read CIA-402 Error Code (0x603F)
     size = sizeof(uint16_t);
     ret = ec_SDOread(slave, 0x603F, 0, FALSE, &size, &fault_codes->cia402_error_code, EC_TIMEOUTRXM);
     if (ret <= 0)
@@ -664,8 +654,7 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
         fault_codes->data_valid = false;
     }
 
-    // Read Manufacturer Fault Code (0x203F) - CORRECTED: This is STRING(8)
-    size = 8;  // 8 bytes for STRING(8)
+    size = 8;
     ret = ec_SDOread(slave, 0x203F, 1, FALSE, &size, fault_codes->manufacturer_fault, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
@@ -673,7 +662,6 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
         fault_codes->data_valid = false;
     }
 
-    // Ensure null termination
     fault_codes->manufacturer_fault[8] = '\0';
 
     return fault_codes->data_valid;
