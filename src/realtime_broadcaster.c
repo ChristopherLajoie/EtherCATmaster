@@ -1,6 +1,6 @@
 /**
- * @file realtime_broadcaster.c (FIXED VERSION)
- * @brief Real-time data broadcasting with separate thermal data thread
+ * @file realtime_broadcaster.c (FIXED VERSION - Global Thermal Data)
+ * @brief Real-time data broadcasting with centralized thermal data management
  */
 
 #include "realtime_broadcaster.h"
@@ -17,9 +17,10 @@
 
 RealtimeBroadcaster g_broadcaster = {0};
 
-// Separate thermal data management
-static thermal_data_t g_thermal_data[MAX_MOTORS] = {0};
-static pthread_mutex_t g_thermal_mutex = PTHREAD_MUTEX_INITIALIZER;
+// GLOBAL thermal data - accessible to other modules
+thermal_data_t g_thermal_data[MAX_MOTORS] = {0};
+pthread_mutex_t g_thermal_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static pthread_t g_thermal_thread;
 static volatile bool g_thermal_thread_running = false;
 
@@ -28,7 +29,7 @@ static void* thermal_monitoring_thread(void* arg)
 {
     (void)arg;
     
-    const int thermal_update_interval_ms = 1000; // Read thermal data every 1 second
+    const int thermal_update_interval_ms = 2000; // Read thermal data every 2 seconds
     struct timespec sleep_time = {
         .tv_sec = thermal_update_interval_ms / 1000,
         .tv_nsec = (thermal_update_interval_ms % 1000) * 1000000L
@@ -40,32 +41,34 @@ static void* thermal_monitoring_thread(void* arg)
     {
         // Read thermal data for all motors
         thermal_data_t temp_data[MAX_MOTORS];
+        bool any_success = false;
         
         for (int i = 0; i < g_motor_control.num_motors; i++)
         {
             int slave_index = g_motor_control.slave_indices[i];
-            if (!read_thermal_data(slave_index, &temp_data[i]))
+            if (read_thermal_data(slave_index, &temp_data[i]))
             {
-                // Mark as invalid but don't spam logs
+                any_success = true;
+            } 
+            else
+            {
+                // Mark as invalid but preserve previous valid data
                 temp_data[i].data_valid = false;
-                temp_data[i].motor_i2t_percent = 0;
-                temp_data[i].drive_temp_celsius = 0.0f;
-                temp_data[i].core_temp_celsius = 0.0f;
-                temp_data[i].index_temp_celsius = 0.0f;
-                temp_data[i].current_actual_A = 0.0f;
-                
-                // Only log errors occasionally
-                static int error_count = 0;
-                if (++error_count % 10 == 1)
-                {
-                    printf("Warning: Failed to read thermal data for motor %d (%d/10)\n", i, error_count);
-                }
+                printf("Warning: Failed to read thermal data for motor %d\n", i);
             }
         }
         
         // Update global thermal data atomically
         pthread_mutex_lock(&g_thermal_mutex);
-        memcpy(g_thermal_data, temp_data, sizeof(g_thermal_data));
+        for (int i = 0; i < g_motor_control.num_motors && i < MAX_MOTORS; i++)
+        {
+            if (temp_data[i].data_valid || !g_thermal_data[i].data_valid)
+            {
+                // Update if new data is valid OR if we don't have any valid data yet
+                g_thermal_data[i] = temp_data[i];
+            }
+            // If read failed but we have previous valid data, keep it (don't update)
+        }
         pthread_mutex_unlock(&g_thermal_mutex);
         
         // Sleep until next update
@@ -85,6 +88,19 @@ bool init_realtime_broadcaster(void)
         printf("Real-time broadcasting disabled in configuration\n");
         return true;
     }
+
+    // Initialize global thermal data with defaults
+    pthread_mutex_lock(&g_thermal_mutex);
+    for (int i = 0; i < MAX_MOTORS; i++)
+    {
+        g_thermal_data[i].motor_i2t_percent = 0;
+        g_thermal_data[i].drive_temp_celsius = 0.0f;
+        g_thermal_data[i].core_temp_celsius = 0.0f;
+        g_thermal_data[i].index_temp_celsius = 0.0f;
+        g_thermal_data[i].current_actual_A = 0.0f;
+        g_thermal_data[i].data_valid = false;
+    }
+    pthread_mutex_unlock(&g_thermal_mutex);
 
     // Create UDP socket
     g_broadcaster.socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -172,7 +188,7 @@ bool init_realtime_broadcaster(void)
         return false;
     }
 
-    printf("Real-time broadcaster initialized with separate thermal monitoring\n");
+    printf("Real-time broadcaster initialized with centralized thermal monitoring\n");
     return true;
 }
 
@@ -204,14 +220,17 @@ static void get_thermal_data_copy(thermal_data_t* thermal_copy, int num_motors)
     pthread_mutex_unlock(&g_thermal_mutex);
 }
 
-// Check for thermal warnings - only warn if i2t > 100% AND (core temp > 90°C OR drive temp > 90°C)
+// FIXED: Check for thermal warnings with better logic
 static bool check_thermal_warning(const thermal_data_t* thermal_data)
 {
     if (!thermal_data->data_valid)
         return false;
     
-    return (thermal_data->motor_i2t_percent > 100) && 
-           (thermal_data->core_temp_celsius > 90.0f || thermal_data->drive_temp_celsius > 90.0f);
+    // Warning if I2t > 80% OR any temperature > 80°C
+    return (thermal_data->motor_i2t_percent > 80) || 
+           (thermal_data->core_temp_celsius > 80.0f) || 
+           (thermal_data->drive_temp_celsius > 80.0f) ||
+           (thermal_data->index_temp_celsius > 80.0f);
 }
 
 void broadcast_motor_data(txpdo_t* txpdo[], int num_motors)

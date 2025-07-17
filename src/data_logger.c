@@ -156,22 +156,18 @@ void log_motor_data(txpdo_t* txpdo[], int num_motors)
     char full_timestamp[80];
     snprintf(full_timestamp, sizeof(full_timestamp), "%s.%03ld", timestamp, ts.tv_nsec / 1000000);
 
-    // Read thermal data for all motors once per log cycle
+    extern thermal_data_t g_thermal_data[MAX_MOTORS];
+    extern pthread_mutex_t g_thermal_mutex;
+    
     static thermal_data_t thermal_data[MAX_MOTORS] = {0};
-    for (int motor = 0; motor < num_motors; motor++)
+    
+    // Copy thermal data safely
+    pthread_mutex_lock(&g_thermal_mutex);
+    for (int motor = 0; motor < num_motors && motor < MAX_MOTORS; motor++)
     {
-        int slave_index = g_motor_control.slave_indices[motor];
-        if (!read_thermal_data(slave_index, &thermal_data[motor]))
-        {
-            // If thermal read fails, mark as invalid but continue logging
-            thermal_data[motor].data_valid = false;
-            thermal_data[motor].motor_i2t_percent = 0;
-            thermal_data[motor].drive_temp_celsius = 0.0f;
-            thermal_data[motor].core_temp_celsius = 0.0f;
-            thermal_data[motor].index_temp_celsius = 0.0f;
-            thermal_data[motor].current_actual_A = 0.0f;
-        }
+        thermal_data[motor] = g_thermal_data[motor];
     }
+    pthread_mutex_unlock(&g_thermal_mutex);
 
     for (int motor = 0; motor < num_motors; motor++)
     {

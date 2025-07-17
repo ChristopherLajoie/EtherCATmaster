@@ -116,49 +116,73 @@ bool read_thermal_data(int slave, thermal_data_t* thermal_data)
     int size;
     uint32_t temp_value;
     float raw_temp_data;
+    bool partial_success = false;
+
+    thermal_data->motor_i2t_percent = 0;
+    thermal_data->drive_temp_celsius = 0.0f;
+    thermal_data->core_temp_celsius = 0.0f;
+    thermal_data->index_temp_celsius = 0.0f;
+    thermal_data->current_actual_A = 0.0f;
+    thermal_data->data_valid = false;
 
     // Read Motor thermal utilisation (I²t) - 0x200A:3
     size = sizeof(uint8_t);
     ret = ec_SDOread(slave, 0x200A, 3, FALSE, &size, &thermal_data->motor_i2t_percent, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        partial_success = true;
+    }
+    else
+    {
+        thermal_data->motor_i2t_percent = 0;
+        printf("Warning: Failed to read I2t for slave %d\n", slave);
     }
 
     // Read Drive-module temperature - 0x2031:1 (in m°C)
     size = sizeof(uint32_t);
     ret = ec_SDOread(slave, 0x2031, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        thermal_data->drive_temp_celsius = (int32_t)temp_value / 1000.0f;
+        partial_success = true;
     }
-    thermal_data->drive_temp_celsius = (int32_t)temp_value / 1000.0f;
+    else
+    {
+        thermal_data->drive_temp_celsius = 0.0f;
+        printf("Warning: Failed to read drive temp for slave %d\n", slave);
+    }
 
     // Read Core-board temperature - 0x2030:1 (in m°C)
     size = sizeof(uint32_t);
     ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
+        partial_success = true;
     }
-    thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
+    else
+    {
+        thermal_data->core_temp_celsius = 0.0f;
+        printf("Warning: Failed to read core temp for slave %d\n", slave);
+    }
 
-    // Read Index temperature - 0x2038:1 (in m°C)
     size = sizeof(float);
-    ret = 1;
-
     ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
-    if (ret <= 0)
+    if (ret > 0)
     {
-        thermal_data->data_valid = false;
-        return false;
+        thermal_data->index_temp_celsius = raw_temp_data;
+        partial_success = true;
     }
-    thermal_data->index_temp_celsius = (int32_t)raw_temp_data;
+    else
+    {
+        thermal_data->index_temp_celsius = 0.0f;
+        printf("Warning: Failed to read index temp for slave %d\n", slave);
+    }
 
-    return true;
+    // Mark as valid if we got at least some data
+    thermal_data->data_valid = partial_success;
+
+    return partial_success;
 }
 
 static bool configure_rxpdo_mappings(int slave)
@@ -228,7 +252,7 @@ static bool configure_txpdo_mappings(int slave)
     {
         return false;
     }
-    
+
     for (size_t i = 0; i < sizeof(tx_mappings) / sizeof(tx_mappings[0]); i++)
     {
         txpdo_count++;
@@ -630,7 +654,7 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
         fault_codes->data_valid = false;
     }
 
-    size = 8;  
+    size = 8;
     ret = ec_SDOread(slave, 0x203F, 1, FALSE, &size, fault_codes->manufacturer_fault, EC_TIMEOUTRXM);
     if (ret <= 0)
     {
