@@ -1,6 +1,6 @@
 /**
  * @file config.h
- * @brief Configuration management header with logging and HMI support
+ * @brief Configuration management header - NXP Yocto RT version
  */
 
 #ifndef CONFIG_H
@@ -56,21 +56,12 @@ typedef struct
     int reverse_left_motor;
     int reverse_right_motor;
 
-    // Logging parameters
-    int enable_logging;
-    char log_file_path[256];
-    int log_interval_ms;
-    int log_interval_cycles;  // Calculated from log_interval_ms and cycletime
-
-    // Real-time HMI parameters
-    int enable_realtime_hmi;
-    char hmi_broadcast_ip[16];
-    int hmi_broadcast_port;
-    int hmi_broadcast_interval_ms;
-
     // I2t protection parameters
     uint32_t i2t_peak_time_ms;      // Peak time (0x200A:2) in milliseconds
-    float i2t_thermal_limit;     // Thermal limit (0x2038:0B)
+    float i2t_thermal_limit;        // Thermal limit (0x2038:0B)
+    
+    // Display interval (for console output only)
+    int log_interval_cycles;         // How often to print status
 } MotorConfig;
 
 extern MotorConfig g_config;

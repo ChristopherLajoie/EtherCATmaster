@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -g -DCAN_MODE_REAL
+CFLAGS = -Wall -Wextra -O2 -g
 LDFLAGS = -lm -lrt -lpthread
 
 # Build directory
@@ -44,14 +44,12 @@ OSAL_OBJ = $(BUILD_OSAL_DIR)/osal.o
 # inih object files
 INIH_OBJ = $(BUILD_INIH_DIR)/ini.o
 
-# Application object files - base set
+# Application object files - cleaned set for NXP Yocto RT
 APP_OBJ = $(BUILD_SRC_DIR)/main.o \
           $(BUILD_SRC_DIR)/hardware_io.o \
           $(BUILD_SRC_DIR)/motor_driver.o \
           $(BUILD_SRC_DIR)/can_interface.o \
-          $(BUILD_SRC_DIR)/config.o \
-          $(BUILD_SRC_DIR)/data_logger.o \
-          $(BUILD_SRC_DIR)/realtime_broadcaster.o
+          $(BUILD_SRC_DIR)/config.o
 
 # All object files
 OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(INIH_OBJ) $(APP_OBJ)
@@ -70,22 +68,6 @@ all:
 	@echo "  Build complete!  "
 	@echo "==================="
 	@echo ""
-
-# Simulation mode compilation
-sim:
-	@$(MAKE) clean
-	@$(MAKE) create_build_dirs
-	@$(MAKE) CFLAGS="-Wall -Wextra -O2 -g -DCAN_MODE_SIMULATION" keyboard_sim_target
-	@echo ""
-	@echo "=============================="
-	@echo "  Simulation build complete!  "
-	@echo "=============================="
-	@echo ""
-
-# Special target for simulation that includes keyboard_simulator.o
-keyboard_sim_target: $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(INIH_OBJ) $(APP_OBJ) $(BUILD_SRC_DIR)/keyboard_simulator.o
-	@echo "Linking $(TARGET)"
-	@$(CC) -o $(TARGET) $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(INIH_OBJ) $(APP_OBJ) $(BUILD_SRC_DIR)/keyboard_simulator.o $(LDFLAGS)
 
 # Create build directories
 create_build_dirs:
@@ -136,6 +118,4 @@ clean:
 	@rm -rf $(BUILD_DIR)
 	@rm -f $(TARGET)
 
-real: all
-
-.PHONY: all clean soem inih create_build_dirs real sim keyboard_sim_target
+.PHONY: all clean soem inih create_build_dirs

@@ -1,9 +1,9 @@
 /**
  * @file hardware_io.c
- * @brief Hardware interface for EtherCAT communication and terminal I/O
+ * @brief Hardware interface for EtherCAT communication - NXP Yocto RT version
  *
- * This file provides functions for EtherCAT initialization, PDO mapping
- * configuration, and terminal raw mode handling for keyboard input.
+ * This file provides functions for EtherCAT initialization and PDO mapping
+ * configuration.
  */
 
 #include "common.h"
@@ -11,8 +11,6 @@
 #include "config.h"
 #include <stdio.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <termios.h>
 
 #define STATUS_STATE_MASK 0x6F
 
@@ -20,8 +18,6 @@
 #define STATE_CHECK_ITERATIONS 40
 #define STATE_CHECK_TIMEOUT_US 100000
 #define STATE_CHECK_DELAY_US 50000
-
-static struct termios orig_termios;
 
 static const cia402_state_pair_t cia402_states[] = {{0x00, "Not Ready To Switch On"},
                                                     {0x40, "Switch On Disabled"},
@@ -34,9 +30,6 @@ static const cia402_state_pair_t cia402_states[] = {{0x00, "Not Ready To Switch 
                                                     {0xFF, "Unknown State"}};
 
 #define CIA402_NUM_STATES (sizeof(cia402_states) / sizeof(cia402_states[0]))
-
-static float g_torque_constants[MAX_MOTORS] = {0};
-static bool g_torque_constants_valid[MAX_MOTORS] = {false};
 
 uint8_t get_cia402_state(uint16_t statusword)
 {
@@ -110,88 +103,13 @@ uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const
     return value;
 }
 
-bool read_thermal_data(int slave, thermal_data_t* thermal_data)
-{
-    int ret;
-    int size;
-    uint32_t temp_value;
-    float raw_temp_data;
-    bool partial_success = false;
-
-    thermal_data->motor_i2t_percent = 0;
-    thermal_data->drive_temp_celsius = 0.0f;
-    thermal_data->core_temp_celsius = 0.0f;
-    thermal_data->index_temp_celsius = 0.0f;
-    thermal_data->current_actual_A = 0.0f;
-    thermal_data->data_valid = false;
-
-    // Read Motor thermal utilisation (I²t) - 0x200A:3
-    size = sizeof(uint8_t);
-    ret = ec_SDOread(slave, 0x200A, 3, FALSE, &size, &thermal_data->motor_i2t_percent, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        partial_success = true;
-    }
-    else
-    {
-        thermal_data->motor_i2t_percent = 0;
-        printf("Warning: Failed to read I2t for slave %d\n", slave);
-    }
-
-    // Read Drive-module temperature - 0x2031:1 (in m°C)
-    size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x2031, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        thermal_data->drive_temp_celsius = (int32_t)temp_value / 1000.0f;
-        partial_success = true;
-    }
-    else
-    {
-        thermal_data->drive_temp_celsius = 0.0f;
-        printf("Warning: Failed to read drive temp for slave %d\n", slave);
-    }
-
-    // Read Core-board temperature - 0x2030:1 (in m°C)
-    size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x2030, 1, FALSE, &size, &temp_value, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        thermal_data->core_temp_celsius = (int32_t)temp_value / 1000.0f;
-        partial_success = true;
-    }
-    else
-    {
-        thermal_data->core_temp_celsius = 0.0f;
-        printf("Warning: Failed to read core temp for slave %d\n", slave);
-    }
-
-    size = sizeof(float);
-    ret = ec_SDOread(slave, 0x2038, 1, FALSE, &size, &raw_temp_data, EC_TIMEOUTRXM);
-    if (ret > 0)
-    {
-        thermal_data->index_temp_celsius = raw_temp_data;
-        partial_success = true;
-    }
-    else
-    {
-        thermal_data->index_temp_celsius = 0.0f;
-        printf("Warning: Failed to read index temp for slave %d\n", slave);
-    }
-
-    // Mark as valid if we got at least some data
-    thermal_data->data_valid = partial_success;
-
-    return partial_success;
-}
-
 static bool configure_rxpdo_mappings(int slave)
 {
     int ret;
     uint8_t rxpdo_count = 0;
     uint8_t zero = 0;
 
-    /* SAME ORDER HAS IN MOTOR_TYPES.H */
+    /* SAME ORDER AS IN MOTOR_TYPES.H */
     static const pdo_entry_t rx_mappings[] = {{0x60400010, "Control word"},
                                               {0x60600008, "Modes of operation"},
                                               {0x60710010, "Target torque"},
@@ -239,7 +157,7 @@ static bool configure_txpdo_mappings(int slave)
     uint8_t txpdo_count = 0;
     uint8_t zero = 0;
 
-    /* SAME ORDER HAS IN MOTOR_TYPES.H */
+    /* SAME ORDER AS IN MOTOR_TYPES.H */
     static const pdo_entry_t tx_mappings[] = {{0x60410010, "Status word"},
                                               {0x60610008, "Modes of operation display"},
                                               {0x60640020, "Position actual value"},
@@ -467,62 +385,8 @@ bool ethercat_init(void)
         g_motor_control.rxpdo[i] = (rxpdo_t*)(ec_slave[slave_index].outputs);
         g_motor_control.txpdo[i] = (txpdo_t*)(ec_slave[slave_index].inputs);
     }
-    if (!init_torque_constants())
-    {
-        printf("Warning: Some torque constants could not be read\n");
-    }
 
     return true;
-}
-
-/**
- * @brief Enable terminal raw mode for keyboard input
- */
-void enable_raw_mode(void)
-{
-    tcgetattr(STDIN_FILENO, &orig_termios);
-    struct termios raw = orig_termios;
-    raw.c_lflag &= ~(ECHO | ICANON);
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-
-    /* Set stdin to non-blocking */
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-}
-
-void disable_raw_mode(void)
-{
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
-
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
-}
-
-/**
- * @brief Check if keyboard input is available
- * @return 1 if a key is available, 0 otherwise
- */
-int kbhit(void)
-{
-    char ch;
-    int nread = read(STDIN_FILENO, &ch, 1);
-    if (nread == 1)
-    {
-        ungetc(ch, stdin);
-        return 1;
-    }
-    return 0;
-}
-
-/**
- * @brief Read a character from keyboard
- * @return The character read
- */
-char readch(void)
-{
-    char ch;
-    read(STDIN_FILENO, &ch, 1);
-    return ch;
 }
 
 /**
@@ -537,53 +401,6 @@ int convert_to_mNm(int16_t raw_torque)
 int convert_to_raw(int16_t torque)
 {
     return (torque * 1000) / 3300;
-}
-
-/**
- * @brief Read torque constant via SDO
- */
-bool read_torque_constant(int slave, float* torque_constant_mNm_per_A)
-{
-    int ret;
-    int size;
-    uint32_t torque_constant_uNm_per_A;
-
-    // Read Torque constant - 0x2003:2 (in µNm/A)
-    size = sizeof(uint32_t);
-    ret = ec_SDOread(slave, 0x2003, 2, FALSE, &size, &torque_constant_uNm_per_A, EC_TIMEOUTRXM);
-    if (ret <= 0)
-    {
-        return false;
-    }
-
-    // Convert from µNm/A to mNm/A
-    *torque_constant_mNm_per_A = (int32_t)torque_constant_uNm_per_A / 1000.0f;
-
-    return true;
-}
-
-/**
- * @brief Calculate current from torque using torque constant
- */
-void calculate_current_from_torque(thermal_data_t* thermal_data, int32_t torque_actual_mNm, int motor_index)
-{
-    if (is_torque_constant_valid(motor_index))
-    {
-        float torque_constant = get_torque_constant(motor_index);
-        if (torque_constant > 0.0f)
-        {
-            // Current (A) = Torque (mNm) / Torque Constant (mNm/A)
-            thermal_data->current_actual_A = fabsf((float)torque_actual_mNm / torque_constant);
-        }
-        else
-        {
-            thermal_data->current_actual_A = 0.0f;
-        }
-    }
-    else
-    {
-        thermal_data->current_actual_A = 0.0f;
-    }
 }
 
 /**
@@ -665,40 +482,4 @@ bool read_fault_codes(int slave, fault_codes_t* fault_codes)
     fault_codes->manufacturer_fault[8] = '\0';
 
     return fault_codes->data_valid;
-}
-bool init_torque_constants(void)
-{
-    bool all_success = true;
-
-    for (int i = 0; i < g_motor_control.num_motors; i++)
-    {
-        int slave_index = g_motor_control.slave_indices[i];
-        if (read_torque_constant(slave_index, &g_torque_constants[i]))
-        {
-            g_torque_constants_valid[i] = true;
-        }
-        else
-        {
-            g_torque_constants_valid[i] = false;
-            g_torque_constants[i] = 0.0f;
-            printf("Warning: Failed to read torque constant for motor %d\n", slave_index);
-            all_success = false;
-        }
-    }
-
-    return all_success;
-}
-
-float get_torque_constant(int motor_index)
-{
-    if (motor_index >= 0 && motor_index < MAX_MOTORS && g_torque_constants_valid[motor_index])
-    {
-        return g_torque_constants[motor_index];
-    }
-    return 0.0f;
-}
-
-bool is_torque_constant_valid(int motor_index)
-{
-    return (motor_index >= 0 && motor_index < MAX_MOTORS && g_torque_constants_valid[motor_index]);
 }

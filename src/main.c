@@ -1,22 +1,16 @@
 /**
  * @file main.c
- * @brief Main program for EtherCAT motor control system
+ * @brief Main program for EtherCAT motor control system - NXP Yocto RT version
  *
- * Initializes an EtherCAT communication with a Synapticon
- * Actilink-S servo drive and controls it using a CAN interface.
+ * Initializes EtherCAT communication with Synapticon
+ * Actilink-S servo drives and controls them using CAN interface.
  */
-
-#ifdef CAN_MODE_SIMULATION
-#include "keyboard_simulator.h"
-#endif
 
 #include "common.h"
 #include "hardware_io.h"
 #include "can_interface.h"
 #include "motor_driver.h"
 #include "config.h"
-#include "realtime_broadcaster.h"
-#include "data_logger.h"
 
 #define MAX_ETHERCAT_RETRIES 5
 #define ETHERCAT_RETRY_DELAY_SEC 3
@@ -100,14 +94,8 @@ static bool initialize_ethercat(void)
 
 static void cleanup_resources(void)
 {
-#ifdef CAN_MODE_SIMULATION
-    stop_keyboard_simulator();
-#endif
-    cleanup_data_logger();
-    cleanup_realtime_broadcaster();
     ec_close();
     stop_can_interface();
-    disable_raw_mode();
 }
 
 int main(void)
@@ -130,38 +118,15 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    /* For simulation */
-    enable_raw_mode();
-
     if (!init_can_interface())
     {
-        /* For simulation */
-        disable_raw_mode();
         return EXIT_FAILURE;
     }
-
-#ifdef CAN_MODE_SIMULATION
-    if (!init_keyboard_simulator())
-    {
-        cleanup_resources();
-        return EXIT_FAILURE;
-    }
-#endif
 
     if (!initialize_ethercat())
     {
         cleanup_resources();
         return EXIT_FAILURE;
-    }
-
-    if (!init_data_logger())
-    {
-        fprintf(stderr, "Warning: Data logging initialization failed\n");
-    }
-
-    if (!init_realtime_broadcaster())
-    {
-        fprintf(stderr, "Warning: Real-time broadcaster initialization failed\n");
     }
 
     /* Configure operation mode to PVM */

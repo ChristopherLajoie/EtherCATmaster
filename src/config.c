@@ -1,6 +1,6 @@
 /**
  * @file config.c
- * @brief Configuration management for motor control application - Updated with HMI support
+ * @brief Configuration management for motor control application - NXP Yocto RT version
  */
 
 #include "common.h"
@@ -35,21 +35,6 @@ static const ConfigMapping config_map[] = {
     {"differential_drive", "reverse_left_motor", TYPE_INT, offsetof(MotorConfig, reverse_left_motor), 0},
     {"differential_drive", "reverse_right_motor", TYPE_INT, offsetof(MotorConfig, reverse_right_motor), 0},
 
-    // Logging parameters
-    {"logging", "enable_logging", TYPE_INT, offsetof(MotorConfig, enable_logging), 0},
-    {"logging", "log_file_path", TYPE_STRING, offsetof(MotorConfig, log_file_path), sizeof(((MotorConfig*)0)->log_file_path)},
-    {"logging", "log_interval_ms", TYPE_INT, offsetof(MotorConfig, log_interval_ms), 0},
-
-    // Real-time HMI parameters
-    {"realtime_hmi", "enable_hmi", TYPE_INT, offsetof(MotorConfig, enable_realtime_hmi), 0},
-    {"realtime_hmi",
-     "broadcast_ip",
-     TYPE_STRING,
-     offsetof(MotorConfig, hmi_broadcast_ip),
-     sizeof(((MotorConfig*)0)->hmi_broadcast_ip)},
-    {"realtime_hmi", "broadcast_port", TYPE_INT, offsetof(MotorConfig, hmi_broadcast_port), 0},
-    {"realtime_hmi", "broadcast_interval_ms", TYPE_INT, offsetof(MotorConfig, hmi_broadcast_interval_ms), 0},
-
     // I2t protection parameters
     {"i2t_protection", "peak_time_ms", TYPE_UINT32, offsetof(MotorConfig, i2t_peak_time_ms), 0},
     {"i2t_protection", "thermal_limit", TYPE_UINT32, offsetof(MotorConfig, i2t_thermal_limit), 0},
@@ -57,38 +42,14 @@ static const ConfigMapping config_map[] = {
 
 void calculate_derived_config_values(void)
 {
-    // Calculate log interval in cycles based on cycletime and desired interval in ms
-    if (g_config.log_interval_ms > 0 && g_config.cycletime > 0)
-    {
-        g_config.log_interval_cycles = g_config.log_interval_ms * 1000 / g_config.cycletime;
-        if (g_config.log_interval_cycles < 1)
-        {
-            g_config.log_interval_cycles = 1;
-        }
-    }
-    else
-    {
-        g_config.log_interval_cycles = 25;  // Default: log every 25 cycles 
-    }
+    // Fixed log interval for console output (25 cycles default)
+    g_config.log_interval_cycles = 25;
 }
 
 bool load_config(const char* filename)
 {
     // Set default values for all parameters
-
-    // Logging defaults
-    g_config.enable_logging = 0;
-    strncpy(g_config.log_file_path, "/tmp/motor_logs", sizeof(g_config.log_file_path) - 1);
-    g_config.log_file_path[sizeof(g_config.log_file_path) - 1] = '\0';
-    g_config.log_interval_ms = 100;  // Default 100ms logging interval
-
-    // Real-time HMI defaults
-    g_config.enable_realtime_hmi = 0;
-    strncpy(g_config.hmi_broadcast_ip, "192.168.1.255", sizeof(g_config.hmi_broadcast_ip) - 1);
-    g_config.hmi_broadcast_ip[sizeof(g_config.hmi_broadcast_ip) - 1] = '\0';
-    g_config.hmi_broadcast_port = 9999;
-    g_config.hmi_broadcast_interval_ms = 100;  // Default 10Hz (100ms)
-
+    
     // I2t protection defaults
     g_config.i2t_peak_time_ms = 5000;      // Default 5 seconds peak time
     g_config.i2t_thermal_limit = 100;      // Default 100% thermal limit
@@ -157,6 +118,12 @@ static int config_handler(void* user, const char* section, const char* name, con
 
             return 1;
         }
+    }
+
+    // Silently ignore logging and HMI parameters from old config files
+    if (strcmp(section, "logging") == 0 || strcmp(section, "realtime_hmi") == 0)
+    {
+        return 1; // Ignore but don't error
     }
 
     fprintf(stderr, "Warning: Unknown configuration option [%s]%s\n", section, name);

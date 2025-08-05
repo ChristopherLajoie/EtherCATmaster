@@ -3,7 +3,6 @@
 
 #include "common.h"
 #include "can_interface.h"
-#include "realtime_broadcaster.h"
 
 typedef enum
 {

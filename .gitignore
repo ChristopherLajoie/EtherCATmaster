@@ -2,3 +2,7 @@
 /SOEM
 /inih
 motor_control
+.clang-format
+hmi_server.py
+lint-apply.sh
+reminder.txt

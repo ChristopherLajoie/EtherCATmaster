@@ -18,40 +18,6 @@
 
 #include "can_interface.h"
 
-#ifdef CAN_MODE_SIMULATION
-typedef struct
-{
-    uint8_t moves_data[8];
-    uint8_t buttons_data[8];
-    struct timespec last_moves_update;
-    struct timespec last_buttons_update;
-} sim_can_data_t;
-
-static sim_can_data_t sim_can_data = {0};
-static pthread_mutex_t sim_can_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-// Initialize simulation CAN data with default values
-static void init_sim_can_data(void) {
-    pthread_mutex_lock(&sim_can_mutex);
-    // Initialize MOVES data (center position)
-    sim_can_data.moves_data[0] = 128; // Y center
-    sim_can_data.moves_data[1] = 128; // X center
-    memset(&sim_can_data.moves_data[2], 0, 6); // Clear remaining bytes
-    
-    // Initialize BUTTONS data 
-    memset(sim_can_data.buttons_data, 0, 8);
-    // Set bit 6 (enable) to 1 - start enabled
-    sim_can_data.buttons_data[0] |= (1 << 6); 
-    // Set bit 63 (e-stop) to 1 - always not stopped (inverted logic)
-    sim_can_data.buttons_data[7] |= (1 << 7);  
-    
-    clock_gettime(CLOCK_MONOTONIC, &sim_can_data.last_moves_update);
-    clock_gettime(CLOCK_MONOTONIC, &sim_can_data.last_buttons_update);
-    pthread_mutex_unlock(&sim_can_mutex);
-}
-
-#endif
-
 CANVariables can_vars;
 static volatile int keep_running = 1;
 static pthread_t monitor_thread_id;
@@ -70,14 +36,6 @@ static int can_socket = -1;
 
 int initialize_can_bus(const char* interface)
 {
-#ifdef CAN_MODE_SIMULATION
-    (void)interface;
-    can_socket = 1;  // Dummy valid socket
-
-    init_sim_can_data();
-    printf("CAN bus initialized in simulation mode\n");
-    return 1;
-#else
     struct sockaddr_can addr;
     struct ifreq ifr;
 
@@ -111,7 +69,6 @@ int initialize_can_bus(const char* interface)
     }
 
     return 1;
-#endif
 }
 
 void shutdown_can_bus(void)
@@ -125,26 +82,6 @@ void shutdown_can_bus(void)
 
 int send_can_message(int can_id, uint8_t* data, int data_length)
 {
-#ifdef CAN_MODE_SIMULATION
-    // In simulation mode, store the data locally for retrieval by receive functions
-    if (can_id == MOVES_ID && data_length == 8)
-    {
-        pthread_mutex_lock(&sim_can_mutex);
-        memcpy(sim_can_data.moves_data, data, 8);
-        clock_gettime(CLOCK_MONOTONIC, &sim_can_data.last_moves_update);
-        pthread_mutex_unlock(&sim_can_mutex);
-        return 1;
-    }
-    else if (can_id == BUTTONS_ID && data_length == 8)
-    {
-        pthread_mutex_lock(&sim_can_mutex);
-        memcpy(sim_can_data.buttons_data, data, 8);
-        clock_gettime(CLOCK_MONOTONIC, &sim_can_data.last_buttons_update);
-        pthread_mutex_unlock(&sim_can_mutex);
-        return 1;
-    }
-    return 1;  // Return success for other messages
-#else
     struct can_frame frame;
 
     if (can_socket < 0)
@@ -173,35 +110,10 @@ int send_can_message(int can_id, uint8_t* data, int data_length)
     }
 
     return 1;
-#endif
 }
 
 int receive_can_message(int can_id, uint8_t* data, int* data_length, int timeout_ms)
 {
-#ifdef CAN_MODE_SIMULATION
-    // In simulation mode, retrieve data from local storage
-
-    (void)timeout_ms;
-    pthread_mutex_lock(&sim_can_mutex);
-
-    if (can_id == MOVES_ID)
-    {
-        memcpy(data, sim_can_data.moves_data, 8);
-        *data_length = 8;
-        pthread_mutex_unlock(&sim_can_mutex);
-        return 1;
-    }
-    else if (can_id == BUTTONS_ID)
-    {
-        memcpy(data, sim_can_data.buttons_data, 8);
-        *data_length = 8;
-        pthread_mutex_unlock(&sim_can_mutex);
-        return 1;
-    }
-
-    pthread_mutex_unlock(&sim_can_mutex);
-    return 0;  // Message not available
-#else
     struct can_frame frame;
     struct can_filter filter;
     struct pollfd pfd;
@@ -257,7 +169,6 @@ int receive_can_message(int can_id, uint8_t* data, int* data_length, int timeout
     memcpy(data, frame.data, frame.can_dlc);
 
     return 1;
-#endif
 }
 
 // Bit extraction helpers
@@ -497,7 +408,7 @@ int set_aux_led(int state)
     return set_led(3, state);  // Aux_Led (bit 3) in LED block
 }
 
-// High-level interface functions - same for both real and simulation
+// High-level interface functions
 int get_can_enable(void)
 {
     int result;

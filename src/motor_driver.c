@@ -1,13 +1,12 @@
 /**
  * @file motor_driver.c
- * @brief Implementation with minimal CiA-402 shutdown sequence
+ * @brief Motor driver implementation - NXP Yocto RT version
  *
  * Adds Quick-Stop → Disable Voltage sequence when enable switch is released
  */
 
 #include "motor_driver.h"
 #include "hardware_io.h"
-#include "data_logger.h"
 #include <time.h>
 #include <signal.h>
 
@@ -131,18 +130,7 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
 
 void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocities_t velocities)
 {
-    extern thermal_data_t g_thermal_data[MAX_MOTORS];
-    extern pthread_mutex_t g_thermal_mutex;
-
-    static thermal_data_t thermal_data[MAX_MOTORS] = {0};
-
-    // Copy thermal data safely
-    pthread_mutex_lock(&g_thermal_mutex);
-    for (int motor = 0; motor < g_motor_control.num_motors && motor < MAX_MOTORS; motor++)
-    {
-        thermal_data[motor] = g_thermal_data[motor];
-    }
-    pthread_mutex_unlock(&g_thermal_mutex);
+    (void)rxpdo; // Unused parameter
 
     if (g_motor_control.num_motors >= 2)
     {
@@ -167,9 +155,6 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             right_target = -right_target;
             right_torque = -right_torque;
         }
-
-        calculate_current_from_torque(&thermal_data[LEFT_MOTOR], left_torque, LEFT_MOTOR);
-        calculate_current_from_torque(&thermal_data[RIGHT_MOTOR], right_torque, RIGHT_MOTOR);
 
         printf("\nL:%4d/%4d R:%4d/%4d rpm| Torque: L=%4d R=%4d mNm\n",
                left_actual,
@@ -201,8 +186,6 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             target = -target;
             torque = -torque;
         }
-
-        calculate_current_from_torque(&thermal_data[0], torque, 0);
 
         printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Differential Test: L=%4d R=%4d rpm\n",
                actual,
@@ -242,42 +225,23 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
         {
             printf("Motor %d Fault detected: %s\n", motor_index, get_cia402_state_string(current_state));
 
-            /*// Print detailed statusword breakdown
-            printf("Statusword: 0x%04X = ", statusword);
-            for (int i = 15; i >= 0; i--) {
-                printf("%d", (statusword >> i) & 1);
-                if (i % 4 == 0 && i > 0) printf(" ");
-            }
-            printf("\n");*/
             printf("  Fault: %s, Ready: %s, Switched On: %s, Op Enabled: %s\n",
                    (statusword & SW_FAULT_BIT) ? "YES" : "NO",
                    (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO",
                    (statusword & SW_SWITCHED_ON_BIT) ? "YES" : "NO",
                    (statusword & SW_OPERATION_ENABLED_BIT) ? "YES" : "NO");
 
-            // Read the detailed fault codes - CORRECTED
+            // Read the detailed fault codes
             fault_codes_t fault_codes;
             int slave_index = g_motor_control.slave_indices[motor_index];
             if (read_fault_codes(slave_index, &fault_codes))
             {
                 printf("CIA-402 Error Code: 0x%04X\n", fault_codes.cia402_error_code);
                 printf("Manufacturer Fault String: \"%s\"\n", fault_codes.manufacturer_fault);
-
-                // Enhanced logging with corrected fault information
-                char enhanced_desc[256];
-                snprintf(enhanced_desc,
-                         sizeof(enhanced_desc),
-                         "%s | 0x603F: 0x%04X | 0x203F: \"%s\"",
-                         get_cia402_state_string(current_state),
-                         fault_codes.cia402_error_code,
-                         fault_codes.manufacturer_fault);
-
-                log_motor_fault(motor_index, fault_codes.cia402_error_code, enhanced_desc);
             }
             else
             {
                 printf("Could not read detailed fault codes\n");
-                log_motor_fault(motor_index, current_state, get_cia402_state_string(current_state));
             }
 
             printf("Starting fault reset sequence\n");
@@ -587,7 +551,6 @@ void* motor_control_cyclic_task(void* arg)
 
                                 controlword |= CW_NEW_VELOCITY_SETPOINT;
                                 g_motor_state[motor].new_setpoint_active = true;
-                                // printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
                             else if (g_motor_state[motor].new_setpoint_active)
                             {
@@ -596,7 +559,6 @@ void* motor_control_cyclic_task(void* arg)
                                     controlword &= ~CW_NEW_VELOCITY_SETPOINT;
                                     g_motor_state[motor].new_setpoint_active = false;
                                 }
-                                // printf("mode of operation = %d", txpdo[motor]->op_mode_display);
                             }
 
                             rxpdo[motor]->controlword = controlword;
@@ -610,11 +572,8 @@ void* motor_control_cyclic_task(void* arg)
             if (++log_interval >= g_config.log_interval_cycles)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
-                log_motor_data(txpdo, g_motor_control.num_motors);
                 log_interval = 0;
             }
-
-            broadcast_motor_data(txpdo, g_motor_control.num_motors);
         }
         else
         {
