@@ -111,7 +111,7 @@ $(BUILD_SRC_DIR)/%.o: src/%.c
 # Link everything together
 $(TARGET): $(OBJ)
 	@echo "Linking $(TARGET)"
-	@$(CC) -o $@ $(OBJ) $(LDFLAGS)
+	@$(CC) $(LDFLAGS) -o $@ $(OBJ)
 
 clean:
 	@echo "Cleaning build files..."
