@@ -1,6 +1,6 @@
 CC ?= gcc
 CFLAGS = -Wall -Wextra -O2 -g
-LDFLAGS = -lm -lrt -lpthread
+LDFLAGS ?= -lm -lrt -lpthread
 
 # Build directory
 BUILD_DIR = build
