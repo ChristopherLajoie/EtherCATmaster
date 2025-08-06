@@ -98,10 +98,24 @@ static void cleanup_resources(void)
     stop_can_interface();
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
-    if (!load_config("motor_config.ini"))
+    const char* config_filename;
+
+    // Check for command-line argument for config file path
+    if (argc > 1) {
+        config_filename = argv[1];
+    } else {
+        // If no argument, print usage and exit
+        fprintf(stderr, "Error: Configuration file not specified.\n");
+        fprintf(stderr, "Usage: %s <path_to_config_file>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    // Load configuration from the specified file
+    if (!load_config(config_filename))
     {
+        fprintf(stderr, "Failed to load configuration from '%s'\n", config_filename);
         return EXIT_FAILURE;
     }
 
