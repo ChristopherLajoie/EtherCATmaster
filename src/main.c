@@ -102,9 +102,23 @@ static void cleanup_resources(void)
     disable_raw_mode();
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
-    if (!load_config("motor_config.ini"))
+    const char *config_filename;
+
+    if (argc > 1)
+    {
+        config_filename = argv[1];
+    }
+    else
+    {
+        // If no argument, print usage and exit
+        fprintf(stderr, "Error: Configuration file not specified.\n");
+        fprintf(stderr, "Usage: %s <path_to_config_file>\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (!load_config(config_filename))
     {
         return EXIT_FAILURE;
     }
@@ -169,7 +183,7 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, 0); // Disable buffering for stdout
 
     while (g_motor_control.run)
     {
