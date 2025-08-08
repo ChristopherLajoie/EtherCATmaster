@@ -1,9 +1,6 @@
 [submodule "SOEM"]
 	path = SOEM
 	url = https://github.com/OpenEtherCATsociety/SOEM.git
-[submodule "external/inih"]
-	path = external/inih
-	url = https://github.com/benhoyt/inih
 [submodule "inih"]
 	path = inih
 	url = https://github.com/benhoyt/inih
