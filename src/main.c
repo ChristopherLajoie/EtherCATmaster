@@ -20,7 +20,7 @@
 
 #define MAX_ETHERCAT_RETRIES 5
 #define ETHERCAT_RETRY_DELAY_SEC 3
-#define SLEEP_INTERVAL_US 10000000
+#define SLEEP_INTERVAL_US 1000000
 
 MotorControl g_motor_control = {.ifname = "eth0",
                                 .cycletime = 4000,
@@ -84,15 +84,7 @@ static bool initialize_ethercat(void)
 
         retry_count++;
 
-        if (retry_count >= MAX_ETHERCAT_RETRIES)
-        {
-            break;
-        }
-
-        for (int i = 0; i < ETHERCAT_RETRY_DELAY_SEC * 10 && g_motor_control.run; i++)
-        {
-            usleep(SLEEP_INTERVAL_US / 10);
-        }
+        usleep(SLEEP_INTERVAL_US * ETHERCAT_RETRY_DELAY_SEC);
     }
 
     return false;
@@ -177,8 +169,8 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    setvbuf(stdout, NULL, _IONBF, 0); 
-    
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     while (g_motor_control.run)
     {
         usleep(SLEEP_INTERVAL_US);
