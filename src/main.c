@@ -16,7 +16,7 @@
 #define ETHERCAT_RETRY_DELAY_SEC 3
 #define SLEEP_INTERVAL_US 1000000 // 1 second
 
-MotorControl g_motor_control = {.ifname = "eth0",
+MotorControl g_motor_control = {.ifname = "eth1",
                                 .cycletime = 4000,
                                 .run = 1,
                                 .num_motors = 2,
