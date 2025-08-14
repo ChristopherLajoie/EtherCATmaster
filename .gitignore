@@ -6,3 +6,4 @@ motor_control
 hmi_server.py
 lint-apply.sh
 reminder.txt
+output.log
