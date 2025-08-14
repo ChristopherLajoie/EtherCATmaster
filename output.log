@@ -1,0 +1,561 @@
+Configuration loaded from 'motor_config.ini'
+2 slave(s) found and configured.
+Operational state reached for all slaves.
+
+L:   0/   0 R:   0/   0 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switch On Disabled  | SW: 0x0070
+  Right - Status: Switch On Disabled  | SW: 0x0070
+--- EtherCAT Master Performance ---
+  Cycles: Total=26         Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=21694.4 Avg=20068.4 Min=19537.4 Max=21694.4
+  Jitter (us):     Last=1694.4  Avg=68.4    Min=-462.6  Max=1694.4 
+  Frame RTT (us):  Last=21615.9 Avg=20021.8 Min=19393.6 Max=21615.9
+-----------------------------------
+
+L:   0/   0 R:   0/   0 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switch On Disabled  | SW: 0x0070
+  Right - Status: Switch On Disabled  | SW: 0x0070
+--- EtherCAT Master Performance ---
+  Cycles: Total=51         Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19995.6 Avg=20000.2 Min=19086.1 Max=21694.4
+  Jitter (us):     Last=-4.4    Avg=0.2     Min=-913.9  Max=1694.4 
+  Frame RTT (us):  Last=19965.4 Avg=19953.1 Min=18820.2 Max=21615.9
+-----------------------------------
+
+L:   0/   0 R:   0/   0 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switch On Disabled  | SW: 0x0070
+  Right - Status: Switch On Disabled  | SW: 0x0070
+--- EtherCAT Master Performance ---
+  Cycles: Total=76         Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20003.2 Avg=20000.2 Min=19086.1 Max=21694.4
+  Jitter (us):     Last=3.2     Avg=0.2     Min=-913.9  Max=1694.4 
+  Frame RTT (us):  Last=19978.7 Avg=19955.0 Min=18820.2 Max=21615.9
+-----------------------------------
+
+L:   0/   0 R:   0/   0 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Ready To Switch On  | SW: 0x0031
+  Right - Status: Ready To Switch On  | SW: 0x0031
+--- EtherCAT Master Performance ---
+  Cycles: Total=101        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19998.5 Avg=20000.1 Min=19086.1 Max=21694.4
+  Jitter (us):     Last=-1.5    Avg=0.1     Min=-913.9  Max=1694.4 
+  Frame RTT (us):  Last=19975.6 Avg=19955.0 Min=18820.2 Max=21615.9
+-----------------------------------
+
+L:  39/1161 R:  41/1161 rpm| Torque: L= 264 R= 224 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=126        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19993.9 Avg=20000.1 Min=19086.1 Max=21694.4
+  Jitter (us):     Last=-6.1    Avg=0.1     Min=-913.9  Max=1694.4 
+  Frame RTT (us):  Last=19958.8 Avg=19955.5 Min=18820.2 Max=21615.9
+-----------------------------------
+
+L: 799/1741 R: 803/1741 rpm| Torque: L= 330 R= 303 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=151        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19992.3 Avg=20000.1 Min=19086.1 Max=21694.4
+  Jitter (us):     Last=-7.7    Avg=0.1     Min=-913.9  Max=1694.4 
+  Frame RTT (us):  Last=19958.9 Avg=19953.7 Min=18820.2 Max=21615.9
+-----------------------------------
+
+L:1551/2104 R:1553/2104 rpm| Torque: L= 405 R= 412 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=176        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20001.8 Avg=20000.1 Min=18379.5 Max=21694.4
+  Jitter (us):     Last=1.8     Avg=0.1     Min=-1620.5 Max=1694.4 
+  Frame RTT (us):  Last=19986.5 Avg=19953.9 Min=18335.1 Max=21615.9
+-----------------------------------
+
+L:2253/2250 R:2259/2250 rpm| Torque: L= 363 R= 359 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=201        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20006.2 Avg=20000.1 Min=18379.5 Max=21694.4
+  Jitter (us):     Last=6.2     Avg=0.1     Min=-1620.5 Max=1694.4 
+  Frame RTT (us):  Last=19976.9 Avg=19954.5 Min=18335.1 Max=21615.9
+-----------------------------------
+
+L:2234/ 580 R:2235/ 580 rpm| Torque: L= 316 R= 330 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=226        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20005.6 Avg=20000.1 Min=18379.5 Max=21694.4
+  Jitter (us):     Last=5.6     Avg=0.1     Min=-1620.5 Max=1694.4 
+  Frame RTT (us):  Last=19988.1 Avg=19953.8 Min=18335.1 Max=21615.9
+-----------------------------------
+
+L:1613/2104 R:1612/2104 rpm| Torque: L= 465 R= 422 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=251        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19997.4 Avg=20000.1 Min=18379.5 Max=21694.4
+  Jitter (us):     Last=-2.6    Avg=0.1     Min=-1620.5 Max=1694.4 
+  Frame RTT (us):  Last=19970.7 Avg=19954.1 Min=18335.1 Max=21615.9
+-----------------------------------
+
+L:2244/2250 R:2250/2250 rpm| Torque: L= 442 R= 452 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=276        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20003.4 Avg=20000.1 Min=18379.5 Max=21694.4
+  Jitter (us):     Last=3.4     Avg=0.1     Min=-1620.5 Max=1694.4 
+  Frame RTT (us):  Last=19977.9 Avg=19954.5 Min=18335.1 Max=21615.9
+-----------------------------------
+
+L:2251/2250 R:2245/2250 rpm| Torque: L= 379 R= 448 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=301        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19994.3 Avg=20000.0 Min=18379.5 Max=21694.4
+  Jitter (us):     Last=-5.7    Avg=0.0     Min=-1620.5 Max=1694.4 
+  Frame RTT (us):  Last=19960.6 Avg=19954.6 Min=18335.1 Max=21615.9
+-----------------------------------
+
+L:1870/   0 R:1869/   0 rpm| Torque: L= 283 R= 333 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=326        Missed (Timeout)=1     Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20005.0 Avg=20000.1 Min=18379.5 Max=21694.4
+  Jitter (us):     Last=5.0     Avg=0.1     Min=-1620.5 Max=1694.4 
+  Frame RTT (us):  Last=19980.5 Avg=19955.0 Min=18335.1 Max=21615.9
+-----------------------------------
+Motor 0 Connection lost
+Motor 1 Connection lost
+Attempting recovery with fast retries...
+  [Attempt 1/20]
+One or more slaves missing
+  [Attempt 2/20]
+One or more slaves missing
+  [Attempt 3/20]
+One or more slaves missing
+  [Attempt 4/20]
+One or more slaves missing
+  [Attempt 5/20]
+One or more slaves missing
+  [Attempt 6/20]
+One or more slaves missing
+  [Attempt 7/20]
+One or more slaves missing
+  [Attempt 8/20]
+One or more slaves missing
+  [Attempt 9/20]
+One or more slaves missing
+  [Attempt 10/20]
+One or more slaves missing
+  [Attempt 11/20]
+One or more slaves missing
+  [Attempt 12/20]
+One or more slaves missing
+  [Attempt 13/20]
+One or more slaves missing
+  [Attempt 14/20]
+One or more slaves missing
+  [Attempt 15/20]
+One or more slaves missing
+  [Attempt 16/20]
+One or more slaves missing
+  [Attempt 17/20]
+One or more slaves missing
+  [Attempt 18/20]
+One or more slaves missing
+  [Attempt 19/20]
+One or more slaves missing
+  [Attempt 20/20]
+One or more slaves missing
+All recovery attempts failed after 20 tries.
+EtherCAT reconnection failed
+Motor 0 Connection lost
+Motor 1 Connection lost
+Attempting recovery with fast retries...
+  [Attempt 1/20]
+One or more slaves missing
+  [Attempt 2/20]
+One or more slaves missing
+  [Attempt 3/20]
+One or more slaves missing
+  [Attempt 4/20]
+One or more slaves missing
+  [Attempt 5/20]
+2 slave(s) found and configured.
+Failed to reach PRE_OP
+  [Attempt 6/20]
+2 slave(s) found and configured.
+Operational state reached for all slaves.
+Recovery successful!
+
+L:   0/   0 R:   0/   0 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switch On Disabled  | SW: 0x0050
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=377        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=78.3    Avg=46479.3 Min=76.7    Max=5714464.8
+  Jitter (us):     Last=-19921.7 Avg=26479.3 Min=-19923.3 Max=5694464.8
+  Frame RTT (us):  Last=46.6    Avg=19496.2 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/   0 R:   0/   0 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Ready To Switch On  | SW: 0x0031
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=402        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.1    Avg=43586.8 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19925.9 Avg=23586.8 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=46.7    Avg=18283.7 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/   0 R:   0/   0 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switch On Disabled  | SW: 0x0070
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=427        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.1    Avg=41033.9 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19925.9 Avg=21033.9 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=46.2    Avg=17213.4 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switch On Disabled  | SW: 0x0070
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=452        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.9    Avg=38764.0 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19925.1 Avg=18764.0 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=45.8    Avg=16262.0 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switch On Disabled  | SW: 0x0070
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=477        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=81.6    Avg=36732.4 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19918.4 Avg=16732.4 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=52.9    Avg=15410.3 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Ready To Switch On  | SW: 0x0031
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=502        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.0    Avg=34903.7 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19926.0 Avg=14903.7 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=45.5    Avg=14643.8 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Switched On         | SW: 0x0033
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=527        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.3    Avg=33248.7 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19925.7 Avg=13248.7 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=45.3    Avg=13950.0 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=552        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.3    Avg=31743.9 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19925.7 Avg=11743.9 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=45.6    Avg=13319.2 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=   0 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=577        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.1    Avg=30369.8 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19925.9 Avg=10369.8 Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=45.5    Avg=12743.1 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=   3 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=602        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=75.7    Avg=29109.9 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19924.3 Avg=9109.9  Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=47.3    Avg=12215.0 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=  19 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=627        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=73.7    Avg=27950.7 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19926.3 Avg=7950.7  Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=45.1    Avg=11729.0 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   0/ 653 R:   0/ 653 rpm| Torque: L=  36 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=652        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=75.5    Avg=26880.4 Min=73.5    Max=5714464.8
+  Jitter (us):     Last=-19924.5 Avg=6880.4  Min=-19926.5 Max=5694464.8
+  Frame RTT (us):  Last=47.1    Avg=11280.4 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   1/ 653 R:   0/ 653 rpm| Torque: L=  66 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=677        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.2    Avg=25889.4 Min=73.4    Max=5714464.8
+  Jitter (us):     Last=-19925.8 Avg=5889.4  Min=-19926.6 Max=5694464.8
+  Frame RTT (us):  Last=45.4    Avg=10864.9 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   3/ 653 R:   0/ 653 rpm| Torque: L=  85 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=702        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=75.1    Avg=24969.0 Min=73.4    Max=5714464.8
+  Jitter (us):     Last=-19924.9 Avg=4969.0  Min=-19926.6 Max=5694464.8
+  Frame RTT (us):  Last=45.0    Avg=10479.1 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   5/ 653 R:   0/ 653 rpm| Torque: L= 102 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=727        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=73.8    Avg=24112.0 Min=73.4    Max=5714464.8
+  Jitter (us):     Last=-19926.2 Avg=4112.0  Min=-19926.6 Max=5694464.8
+  Frame RTT (us):  Last=46.4    Avg=10119.9 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   6/ 653 R:   0/ 653 rpm| Torque: L= 128 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=752        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=73.4    Avg=23312.0 Min=73.1    Max=5714464.8
+  Jitter (us):     Last=-19926.6 Avg=3312.0  Min=-19926.9 Max=5694464.8
+  Frame RTT (us):  Last=44.8    Avg=9784.5  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:   9/ 653 R:   0/ 653 rpm| Torque: L= 141 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=777        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=73.9    Avg=22563.7 Min=73.1    Max=5714464.8
+  Jitter (us):     Last=-19926.1 Avg=2563.7  Min=-19926.9 Max=5694464.8
+  Frame RTT (us):  Last=45.4    Avg=9470.8  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:  12/ 653 R:   0/ 653 rpm| Torque: L= 155 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=802        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.3    Avg=21862.0 Min=73.1    Max=5714464.8
+  Jitter (us):     Last=-19925.7 Avg=1862.0  Min=-19926.9 Max=5694464.8
+  Frame RTT (us):  Last=45.8    Avg=9176.6  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:  14/ 653 R:   0/ 653 rpm| Torque: L= 188 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=827        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.3    Avg=21202.8 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-19925.7 Avg=1202.8  Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=45.6    Avg=8900.3  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:  16/ 653 R:   0/ 653 rpm| Torque: L= 204 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=852        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=74.1    Avg=20582.3 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-19925.9 Avg=582.3   Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=45.4    Avg=8640.2  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:  18/ 653 R:   0/ 653 rpm| Torque: L= 227 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Not Ready To Switch On| SW: 0x0000
+--- EtherCAT Master Performance ---
+  Cycles: Total=877        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=2492.1  Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-17507.9 Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=2464.2  Avg=8397.7  Min=16.5    Max=26431.3
+-----------------------------------
+
+L: 734/ 798 R:   0/ 798 rpm| Torque: L= 171 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Switch On Disabled  | SW: 0x0050
+--- EtherCAT Master Performance ---
+  Cycles: Total=902        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19998.3 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-1.7    Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19961.8 Avg=8718.1  Min=16.5    Max=26431.3
+-----------------------------------
+
+L: 798/ 798 R:   0/ 798 rpm| Torque: L= 264 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Switch On Disabled  | SW: 0x0050
+--- EtherCAT Master Performance ---
+  Cycles: Total=927        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19996.4 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-3.6    Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19955.2 Avg=9021.1  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1015/1451 R:   0/1451 rpm| Torque: L= 300 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Switch On Disabled  | SW: 0x0050
+--- EtherCAT Master Performance ---
+  Cycles: Total=952        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19999.6 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-0.4    Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19966.9 Avg=9308.1  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1712/1741 R:   0/1741 rpm| Torque: L= 485 R=   0 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Switched On         | SW: 0x0033
+--- EtherCAT Master Performance ---
+  Cycles: Total=977        Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20000.9 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=0.9     Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19960.4 Avg=9580.5  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1887/1887 R: 621/1887 rpm| Torque: L= 412 R= 293 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1002       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19997.4 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-2.6    Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19962.5 Avg=9839.2  Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1882/1887 R:1372/1887 rpm| Torque: L= 405 R= 425 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1027       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20000.2 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=0.2     Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19949.6 Avg=10085.4 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1897/1887 R:1885/1887 rpm| Torque: L= 290 R= 349 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1052       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20008.1 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=8.1     Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19973.9 Avg=10319.9 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1359/   0 R:1348/   0 rpm| Torque: L= 227 R= 349 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1077       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19970.5 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-29.5   Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19925.3 Avg=10543.4 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1309/1306 R:1310/1306 rpm| Torque: L= 343 R= 313 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1102       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19999.1 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-0.9    Avg=0.0     Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19964.3 Avg=10756.5 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1379/1379 R:1382/1379 rpm| Torque: L= 343 R= 363 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1127       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19998.9 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-1.1    Avg=-0.0    Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19980.7 Avg=10961.1 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1656/1814 R:1654/1814 rpm| Torque: L= 382 R= 448 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1152       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19999.0 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-1.0    Avg=-0.0    Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19985.9 Avg=11156.9 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:2249/2250 R:2240/2250 rpm| Torque: L= 389 R= 445 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0437
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1177       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=19996.3 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=-3.7    Avg=-0.0    Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19977.1 Avg=11344.3 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:2256/2250 R:2245/2250 rpm| Torque: L= 297 R= 435 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1202       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20001.5 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=1.5     Avg=-0.0    Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19987.2 Avg=11524.0 Min=16.5    Max=26431.3
+-----------------------------------
+
+L:1718/   0 R:1716/   0 rpm| Torque: L= 290 R= 290 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1227       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20000.9 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=0.9     Avg=-0.0    Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19983.7 Avg=11696.3 Min=16.5    Max=26431.3
+-----------------------------------
+
+L: 970/   0 R: 970/   0 rpm| Torque: L= 217 R= 237 mNm
+  Left  - Status: Operation Enabled   | SW: 0x0037
+  Right - Status: Operation Enabled   | SW: 0x0037
+--- EtherCAT Master Performance ---
+  Cycles: Total=1252       Missed (Timeout)=27    Bad WKC=0    
+  Cycle Time (us): Target=20000.0 Last=20000.6 Avg=20000.0 Min=73.0    Max=5714464.8
+  Jitter (us):     Last=0.6     Avg=-0.0    Min=-19927.0 Max=5694464.8
+  Frame RTT (us):  Last=19987.4 Avg=11861.7 Min=16.5    Max=26431.3
+-----------------------------------
+
+Signal 2 received, stopping program... (1)
+Shutting down motor(s)
+Motor shutdown sequence complete
+Program terminated successfully

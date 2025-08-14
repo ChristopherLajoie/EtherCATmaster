@@ -7,6 +7,7 @@
 
 #include "motor_driver.h"
 #include "hardware_io.h"
+#include "performance_monitor.h" 
 #include <time.h>
 #include <signal.h>
 
@@ -202,16 +203,22 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
 
 bool attempt_ethercat_reconnection()
 {
-    for (int i = 0; i < g_motor_control.num_motors; i++)
+    ec_close(); 
+
+    int max_retries = 20; 
+    for (int i = 0; i < max_retries; i++)
     {
-        if (ec_slave[g_motor_control.slave_indices[i]].islost)
+        usleep(200000); // 200ms delay between attempts
+
+        printf("  [Attempt %d/%d]\n", i + 1, max_retries);
+        if (ethercat_init())
         {
-            if (ethercat_init())
-            {
-                return true;
-            }
+            printf("Recovery successful!\n");
+            return true;
         }
     }
+
+    printf("All recovery attempts failed after %d tries.\n", max_retries);
     return false;
 }
 
@@ -293,6 +300,11 @@ void* motor_control_cyclic_task(void* arg)
 {
     (void)arg;
 
+    performance_metrics_t perf_metrics;
+
+    int expected_wkc = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
+    perf_init(&perf_metrics, g_motor_control.cycletime);
+
     rxpdo_t* rxpdo[MAX_MOTORS];
     txpdo_t* txpdo[MAX_MOTORS];
 
@@ -326,6 +338,8 @@ void* motor_control_cyclic_task(void* arg)
         // DC synchronization
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, &tleft);
 
+        perf_cycle_start(&perf_metrics);
+
         // Calculate next cycle time
         ts.tv_nsec += cycletime_ns;
         if (ts.tv_nsec >= 1000000000)
@@ -335,6 +349,8 @@ void* motor_control_cyclic_task(void* arg)
         }
 
         wkc = ec_receive_processdata(EC_TIMEOUTRET);
+
+        perf_receive_complete(&perf_metrics, wkc, expected_wkc);
 
         if (wkc > 0)
         {
@@ -572,6 +588,7 @@ void* motor_control_cyclic_task(void* arg)
             if (++log_interval >= g_config.log_interval_cycles)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
+                //perf_log_output(&perf_metrics); 
                 log_interval = 0;
             }
         }
@@ -605,16 +622,15 @@ void* motor_control_cyclic_task(void* arg)
                 struct timespec current_time;
                 clock_gettime(CLOCK_MONOTONIC, &current_time);
 
-                if (!g_motor_control.reconnect_in_progress
-                    && (current_time.tv_sec - g_motor_control.last_reconnect_attempt.tv_sec) >= 5)
+                if (!g_motor_control.reconnect_in_progress)
                 {
                     g_motor_control.reconnection_attempts++;
                     g_motor_control.reconnect_in_progress = true;
 
-                    printf("Attempting to recover..\n");
-
                     if (attempt_ethercat_reconnection())
                     {
+                        expected_wkc = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
+
                         for (int motor = 0; motor < g_motor_control.num_motors; motor++)
                         {
                             g_motor_state[motor].consecutive_comm_errors = 0;
@@ -637,6 +653,8 @@ void* motor_control_cyclic_task(void* arg)
         }
 
         ec_send_processdata();
+
+        perf_send_complete(&perf_metrics);
     }
 
     printf("Shutting down motor(s)\n");

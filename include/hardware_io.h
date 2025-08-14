@@ -39,6 +39,7 @@ typedef struct
 } motion_param_t;
 
 bool ethercat_init();
+bool ethercat_recover(void);
 bool configure_pdo_mappings(int slave);
 uint8_t get_cia402_state(uint16_t statusword);
 uint16_t get_cia402_state_code(const char* state_str);

@@ -12,7 +12,7 @@ typedef enum
 } motor_state_t;
 
 #define MAX_FAULT_RESET_ATTEMPTS 15
-#define MAX_COMM_ERRORS 100
+#define MAX_COMM_ERRORS 25
 
 typedef struct
 {

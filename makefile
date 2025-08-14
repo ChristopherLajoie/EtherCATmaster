@@ -49,7 +49,8 @@ APP_OBJ = $(BUILD_SRC_DIR)/main.o \
           $(BUILD_SRC_DIR)/hardware_io.o \
           $(BUILD_SRC_DIR)/motor_driver.o \
           $(BUILD_SRC_DIR)/can_interface.o \
-          $(BUILD_SRC_DIR)/config.o
+          $(BUILD_SRC_DIR)/config.o \
+          $(BUILD_SRC_DIR)/performance_monitor.o
 
 # All object files
 OBJ = $(SOEM_OBJ) $(OSHW_OBJ) $(OSAL_OBJ) $(INIH_OBJ) $(APP_OBJ)
@@ -60,7 +61,7 @@ TARGET = motor_control
 # Make options to reduce verbosity
 MAKEFLAGS += --no-print-directory
 
-all: 
+all:
 	@$(MAKE) clean
 	@$(MAKE) create_build_dirs $(TARGET)
 	@echo ""

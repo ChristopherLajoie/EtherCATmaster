@@ -16,8 +16,9 @@
 #define ETHERCAT_RETRY_DELAY_SEC 3
 #define SLEEP_INTERVAL_US 1000000 // 1 second
 
+// UPDATE THESE PARAMETERS IN CONFIG FILE NOT HERE
 MotorControl g_motor_control = {.ifname = "eth0",
-                                .cycletime = 4000,
+                                .cycletime = 10000,
                                 .run = 1,
                                 .num_motors = 2,
                                 .slave_indices = {1, 2},
