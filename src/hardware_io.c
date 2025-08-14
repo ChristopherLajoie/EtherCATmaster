@@ -15,9 +15,9 @@
 #define STATUS_STATE_MASK 0x6F
 
 #define MAX_STATE_TRANSITION_RETRIES 3
-#define STATE_CHECK_ITERATIONS 40
-#define STATE_CHECK_TIMEOUT_US 100000
-#define STATE_CHECK_DELAY_US 50000
+#define STATE_CHECK_ITERATIONS 20
+#define STATE_CHECK_TIMEOUT_US 50000
+#define STATE_CHECK_DELAY_US 20000
 
 static const cia402_state_pair_t cia402_states[] = {{0x00, "Not Ready To Switch On"},
                                                     {0x40, "Switch On Disabled"},

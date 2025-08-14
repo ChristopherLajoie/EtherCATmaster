@@ -12,8 +12,6 @@
 #include "motor_driver.h"
 #include "config.h"
 
-#define MAX_ETHERCAT_RETRIES 5
-#define ETHERCAT_RETRY_DELAY_SEC 3
 #define SLEEP_INTERVAL_US 1000000 // 1 second
 
 MotorControl g_motor_control = {.ifname = "eth1",
@@ -67,21 +65,7 @@ static int setup_signal_handlers(void)
 
 static bool initialize_ethercat(void)
 {
-    int retry_count = 0;
-
-    while (g_motor_control.run && retry_count < MAX_ETHERCAT_RETRIES)
-    {
-        if (ethercat_init())
-        {
-            return true;
-        }
-
-        retry_count++;
-
-        usleep(SLEEP_INTERVAL_US * ETHERCAT_RETRY_DELAY_SEC);
-    }
-
-    return false;
+    return ethercat_init();
 }
 
 static void cleanup_resources(void)
@@ -93,6 +77,8 @@ static void cleanup_resources(void)
 int main(int argc, char *argv[])
 {
     const char *config_filename;
+
+    fprintf(stderr,"Build v1.1\n");
 
     // Check for command-line argument for config file path
     if (argc > 1)
