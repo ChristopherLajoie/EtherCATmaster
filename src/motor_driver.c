@@ -585,10 +585,10 @@ void* motor_control_cyclic_task(void* arg)
             }
 
             static int log_interval = 0;
-            if (++log_interval >= g_config.log_interval_cycles)
+            if (++log_interval >= 100)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
-                //perf_log_output(&perf_metrics); 
+                perf_log_output(&perf_metrics); 
                 log_interval = 0;
             }
         }

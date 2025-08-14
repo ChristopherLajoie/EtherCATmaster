@@ -8,11 +8,11 @@
 
 MotorConfig g_config;
 
-static int config_handler(void* user, const char* section, const char* name, const char* value);
+static int config_handler(void *user, const char *section, const char *name, const char *value);
 
 static const ConfigMapping config_map[] = {
     // EtherCAT parameters
-    {"ethercat", "interface", TYPE_STRING, offsetof(MotorConfig, interface), sizeof(((MotorConfig*)0)->interface)},
+    {"ethercat", "interface", TYPE_STRING, offsetof(MotorConfig, interface), sizeof(((MotorConfig *)0)->interface)},
     {"ethercat", "cycletime", TYPE_INT, offsetof(MotorConfig, cycletime), 0},
     {"ethercat", "num_motors", TYPE_INT, offsetof(MotorConfig, num_motors), 0},
 
@@ -37,83 +37,69 @@ static const ConfigMapping config_map[] = {
 
     // I2t protection parameters
     {"i2t_protection", "peak_time_ms", TYPE_UINT32, offsetof(MotorConfig, i2t_peak_time_ms), 0},
-    {"i2t_protection", "thermal_limit", TYPE_UINT32, offsetof(MotorConfig, i2t_thermal_limit), 0},
 };
 
-void calculate_derived_config_values(void)
-{
-    // Fixed log interval for console output (25 cycles default)
-    g_config.log_interval_cycles = 25;
-}
 
-bool load_config(const char* filename)
+bool load_config(const char *filename)
 {
-    // Set default values for all parameters
-    
-    // I2t protection defaults
-    g_config.i2t_peak_time_ms = 5000;      // Default 5 seconds peak time
-    g_config.i2t_thermal_limit = 100;      // Default 100% thermal limit
 
     if (ini_parse(filename, config_handler, &g_config) < 0)
     {
         return false;
     }
 
-    // Calculate derived values
-    calculate_derived_config_values();
-
     printf("Configuration loaded from '%s'\n", filename);
     return true;
 }
 
-static int config_handler(void* user, const char* section, const char* name, const char* value)
+static int config_handler(void *user, const char *section, const char *name, const char *value)
 {
-    MotorConfig* config = (MotorConfig*)user;
+    MotorConfig *config = (MotorConfig *)user;
 
     for (size_t i = 0; i < sizeof(config_map) / sizeof(config_map[0]); i++)
     {
         if (strcmp(section, config_map[i].section) == 0 && strcmp(name, config_map[i].name) == 0)
         {
-            void* target = (char*)config + config_map[i].offset;
+            void *target = (char *)config + config_map[i].offset;
 
             switch (config_map[i].type)
             {
-                case TYPE_STRING:
-                    strncpy((char*)target, value, config_map[i].max_len - 1);
-                    ((char*)target)[config_map[i].max_len - 1] = '\0';
-                    break;
-                case TYPE_INT:
-                    *(int*)target = atoi(value);
-                    break;
-                case TYPE_UINT16:
-                    *(uint16_t*)target = (uint16_t)strtol(value, NULL, 0);
-                    break;
-                case TYPE_UINT32:
-                    *(uint32_t*)target = (uint32_t)strtol(value, NULL, 0);
-                    break;
-                case TYPE_INT16:
-                    *(int16_t*)target = (int16_t)atoi(value);
-                    break;
-                case TYPE_UINT8:
-                    *(uint8_t*)target = (uint8_t)strtol(value, NULL, 0);
-                    break;
-                case TYPE_FLOAT:
-                {
-                    float val = strtof(value, NULL);
-                    if (strcmp(name, "turn_factor") == 0)
-                    {
-                        if (val < 0.0f || val > 1.0f)
-                        {
-                            fprintf(stderr, "Invalid turn factor value\n");
-                            return 0;
-                        }
-                    }
-                    *(float*)target = val;
-                }
+            case TYPE_STRING:
+                strncpy((char *)target, value, config_map[i].max_len - 1);
+                ((char *)target)[config_map[i].max_len - 1] = '\0';
                 break;
-                default:
-                    fprintf(stderr, "Warning: Unknown type for [%s]%s\n", section, name);
-                    return 0;
+            case TYPE_INT:
+                *(int *)target = atoi(value);
+                break;
+            case TYPE_UINT16:
+                *(uint16_t *)target = (uint16_t)strtol(value, NULL, 0);
+                break;
+            case TYPE_UINT32:
+                *(uint32_t *)target = (uint32_t)strtol(value, NULL, 0);
+                break;
+            case TYPE_INT16:
+                *(int16_t *)target = (int16_t)atoi(value);
+                break;
+            case TYPE_UINT8:
+                *(uint8_t *)target = (uint8_t)strtol(value, NULL, 0);
+                break;
+            case TYPE_FLOAT:
+            {
+                float val = strtof(value, NULL);
+                if (strcmp(name, "turn_factor") == 0)
+                {
+                    if (val < 0.0f || val > 1.0f)
+                    {
+                        fprintf(stderr, "Invalid turn factor value\n");
+                        return 0;
+                    }
+                }
+                *(float *)target = val;
+            }
+            break;
+            default:
+                fprintf(stderr, "Warning: Unknown type for [%s]%s\n", section, name);
+                return 0;
             }
 
             return 1;

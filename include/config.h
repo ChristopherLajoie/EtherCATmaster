@@ -23,8 +23,8 @@ typedef enum
 
 typedef struct
 {
-    const char* section;
-    const char* name;
+    const char *section;
+    const char *name;
     ConfigType type;
     size_t offset;
     size_t max_len;
@@ -57,11 +57,7 @@ typedef struct
     int reverse_right_motor;
 
     // I2t protection parameters
-    uint32_t i2t_peak_time_ms;      // Peak time (0x200A:2) in milliseconds
-    float i2t_thermal_limit;        // Thermal limit (0x2038:0B)
-    
-    // Display interval (for console output only)
-    int log_interval_cycles;         // How often to print status
+    uint32_t i2t_peak_time_ms; // Peak time (0x200A:2) in milliseconds
 } MotorConfig;
 
 extern MotorConfig g_config;
@@ -71,11 +67,6 @@ extern MotorConfig g_config;
  * @param filename Path to the INI file
  * @return true on success, false on failure
  */
-bool load_config(const char* filename);
+bool load_config(const char *filename);
 
-/**
- * @brief Calculate derived configuration values
- */
-void calculate_derived_config_values(void);
-
-#endif  // CONFIG_H
+#endif // CONFIG_H
