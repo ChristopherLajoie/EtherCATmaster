@@ -606,7 +606,7 @@ void* motor_control_cyclic_task(void* arg)
                 clock_gettime(CLOCK_MONOTONIC, &current_time);
 
                 if (!g_motor_control.reconnect_in_progress
-                    && (current_time.tv_sec - g_motor_control.last_reconnect_attempt.tv_sec) >= 5)
+                    && (current_time.tv_sec - g_motor_control.last_reconnect_attempt.tv_sec) >= 1)
                 {
                     g_motor_control.reconnection_attempts++;
                     g_motor_control.reconnect_in_progress = true;
