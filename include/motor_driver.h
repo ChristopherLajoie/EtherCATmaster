@@ -11,8 +11,10 @@ typedef enum
     STATE_OPERATIONAL
 } motor_state_t;
 
-#define MAX_FAULT_RESET_ATTEMPTS 15
-#define MAX_COMM_ERRORS 25
+#define POWER_LOSS_RESET_DELAY_US 500000 
+#define QUICK_RECOVERY_DELAY_MS 100
+#define MAX_QUICK_RECOVERY_ATTEMPTS 5
+#define MAX_COMM_ERRORS_BEFORE_RESET 25
 
 typedef struct
 {
@@ -40,6 +42,7 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
 
 void init_motor_control_state(motor_control_state_t* state);
 bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state_t* state, int motor_index);
-bool attempt_ethercat_reconnection();
+bool attempt_slave_full_recovery();
+bool attempt_slave_quick_recovery();
 
 #endif

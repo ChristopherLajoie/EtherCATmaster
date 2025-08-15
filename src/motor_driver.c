@@ -1,20 +1,18 @@
 /**
  * @file motor_driver.c
  * @brief Motor driver implementation - NXP Yocto RT version
- *
- * Adds Quick-Stop → Disable Voltage sequence when enable switch is released
  */
 
 #include "motor_driver.h"
 #include "hardware_io.h"
-#include "performance_monitor.h" 
+#include "performance_monitor.h"
 #include <time.h>
 #include <signal.h>
 
 motor_control_state_t g_motor_state[MAX_MOTORS];
 int32_t max_vel = 0;
 
-void init_motor_control_state(motor_control_state_t* state)
+void init_motor_control_state(motor_control_state_t *state)
 {
     if (state == NULL)
         return;
@@ -129,9 +127,9 @@ differential_velocities_t calculate_differential_drive(int x_axis, int y_axis, i
     return result;
 }
 
-void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocities_t velocities)
+void log_motor_status(rxpdo_t* rxpdo[], txpdo_t *txpdo[], differential_velocities_t velocities)
 {
-    (void)rxpdo; // Unused parameter
+    (void)rxpdo; 
 
     if (g_motor_control.num_motors >= 2)
     {
@@ -143,7 +141,7 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
         int32_t left_target = velocities.left_velocity;
         int32_t right_target = velocities.right_velocity;
 
-        // Apply reverse correction for display
+        /* Apply reverse correction for display */
         if (g_config.reverse_left_motor)
         {
             left_actual = -left_actual;
@@ -168,8 +166,8 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
         for (int motor = 0; motor < 2; motor++)
         {
             uint16_t current_state = get_cia402_state(txpdo[motor]->statusword);
-            const char* state_string = get_cia402_state_string(current_state);
-            const char* motor_name = (motor == LEFT_MOTOR) ? "Left " : "Right";
+            const char *state_string = get_cia402_state_string(current_state);
+            const char *motor_name = (motor == LEFT_MOTOR) ? "Left " : "Right";
 
             printf("  %s - Status: %-20s| SW: 0x%04X\n", motor_name, state_string, txpdo[motor]->statusword);
         }
@@ -180,7 +178,6 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
         int32_t target = rxpdo[0]->target_velocity;
         int32_t torque = convert_to_mNm(txpdo[0]->torque_actual);
 
-        // Apply reverse correction for display
         if (g_config.reverse_left_motor)
         {
             actual = -actual;
@@ -188,7 +185,7 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
             torque = -torque;
         }
 
-        printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Differential Test: L=%4d R=%4d rpm\n",
+        printf("Motor: %4d/%4d rpm | Torque: %4d mNm | Differential : L=%4d R=%4d rpm\n",
                actual,
                target,
                torque,
@@ -196,33 +193,89 @@ void log_motor_status(rxpdo_t* rxpdo[], txpdo_t* txpdo[], differential_velocitie
                velocities.right_velocity);
 
         uint16_t current_state = get_cia402_state(txpdo[0]->statusword);
-        const char* state_string = get_cia402_state_string(current_state);
+        const char *state_string = get_cia402_state_string(current_state);
         printf("Status: %-20s\n", state_string);
     }
 }
 
-bool attempt_ethercat_reconnection()
+bool attempt_slave_full_recovery()
 {
-    ec_close(); 
+    ec_close();
 
-    int max_retries = 20; 
-    for (int i = 0; i < max_retries; i++)
+    while (!ethercat_init())
     {
-        usleep(200000); // 200ms delay between attempts
-
-        printf("  [Attempt %d/%d]\n", i + 1, max_retries);
-        if (ethercat_init())
-        {
-            printf("Recovery successful!\n");
-            return true;
-        }
+        usleep(POWER_LOSS_RESET_DELAY_US);
     }
 
-    printf("All recovery attempts failed after %d tries.\n", max_retries);
-    return false;
+    return true;
 }
 
-bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state_t* state, int motor_index)
+bool attempt_slave_quick_recovery()
+{
+    bool all_recovered = false;
+    const int RECOVERY_TIMEOUT = QUICK_RECOVERY_DELAY_MS; 
+    int attempt_count = 0;
+    
+    while (!all_recovered)
+    {
+        all_recovered = true;
+        attempt_count++;
+        
+        for (int motor = 0; motor < g_motor_control.num_motors; motor++)
+        {
+            int slave_idx = g_motor_control.slave_indices[motor];
+            
+            if (ec_slave[slave_idx].islost)
+            {
+
+                if (ec_recover_slave(slave_idx, RECOVERY_TIMEOUT) > 0)
+                {
+                    ec_slave[slave_idx].islost = FALSE;
+                    
+                    if (ec_slave[slave_idx].state != EC_STATE_OPERATIONAL)
+                    {
+                        ec_slave[slave_idx].state = EC_STATE_OPERATIONAL;
+                        ec_writestate(slave_idx);
+                        usleep(50000); // 50ms
+                        ec_statecheck(slave_idx, EC_STATE_OPERATIONAL, EC_TIMEOUTSTATE);
+                    }
+                    
+                    if (ec_slave[slave_idx].state == EC_STATE_OPERATIONAL)
+                    {
+                        printf("  Slave %d recovered (attempt %d)\n", slave_idx, attempt_count);
+                    }
+                    else
+                    {
+                        all_recovered = false;
+                    }
+                }
+                else
+                {
+                    all_recovered = false;
+                }
+            }
+        }
+        
+        if (!all_recovered)
+        {
+            if (attempt_count >= MAX_QUICK_RECOVERY_ATTEMPTS)
+            {
+                printf("Quick recovery failed after %d attempts\n", attempt_count);
+                return false;
+            }
+            
+            usleep(100000); 
+        }
+    }
+    
+    printf("Quick recovery successful after %d attempts\n", attempt_count);
+    
+    ec_configdc();
+    
+    return true;
+}
+    
+bool handle_fault_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state_t *state, int motor_index)
 {
     if (statusword & SW_FAULT_BIT)
     {
@@ -261,18 +314,18 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
 
         switch (reset_step)
         {
-            case 0:
-                rxpdo->controlword = 0;
-                break;
-            case 1:
-                rxpdo->controlword = CW_FAULT_RESET;
-                break;
-            case 2:
-                rxpdo->controlword = CW_SHUTDOWN;
-                break;
-            case 3:
-                rxpdo->controlword = CW_DISABLEVOLTAGE;
-                break;
+        case 0:
+            rxpdo->controlword = 0;
+            break;
+        case 1:
+            rxpdo->controlword = CW_FAULT_RESET;
+            break;
+        case 2:
+            rxpdo->controlword = CW_SHUTDOWN;
+            break;
+        case 3:
+            rxpdo->controlword = CW_DISABLEVOLTAGE;
+            break;
         }
 
         reset_step = (reset_step + 1) % 4;
@@ -296,7 +349,7 @@ bool handle_fault_state(rxpdo_t* rxpdo, uint16_t statusword, motor_control_state
     return false;
 }
 
-void* motor_control_cyclic_task(void* arg)
+void *motor_control_cyclic_task(void *arg)
 {
     (void)arg;
 
@@ -305,8 +358,8 @@ void* motor_control_cyclic_task(void* arg)
     int expected_wkc = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
     perf_init(&perf_metrics, g_motor_control.cycletime);
 
-    rxpdo_t* rxpdo[MAX_MOTORS];
-    txpdo_t* txpdo[MAX_MOTORS];
+    rxpdo_t *rxpdo[MAX_MOTORS];
+    txpdo_t *txpdo[MAX_MOTORS];
 
     for (int i = 0; i < g_motor_control.num_motors; i++)
     {
@@ -379,208 +432,207 @@ void* motor_control_cyclic_task(void* arg)
             {
                 switch (g_motor_state[motor].state)
                 {
-                    case STATE_BOOT:
-                        if (txpdo[motor]->statusword == 0)
-                        {
-                            static int zero_statusword_count[MAX_MOTORS] = {0};
-                            rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
-                            zero_statusword_count[motor]++;
+                case STATE_BOOT:
+                    if (txpdo[motor]->statusword == 0)
+                    {
+                        static int zero_statusword_count[MAX_MOTORS] = {0};
+                        rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
+                        zero_statusword_count[motor]++;
 
-                            // After significant time, proceed anyway
-                            if (zero_statusword_count[motor] > 500)
-                            {
-                                g_motor_state[motor].state = STATE_INIT;
-                                g_motor_state[motor].init_step = 0;
-                                g_motor_state[motor].init_wait = 0;
-                            }
-                        }
-                        else if (txpdo[motor]->statusword & SW_FAULT_BIT)
-                        {
-                            if (handle_fault_state(rxpdo[motor], txpdo[motor]->statusword, &g_motor_state[motor], motor))
-                            {
-                                break;
-                            }
-
-                            if (++g_motor_state[motor].init_wait > 100)
-                            {
-                                g_motor_state[motor].fault_reset_attempts = 0;
-                                g_motor_state[motor].init_wait = 0;
-                                g_motor_state[motor].state = STATE_INIT;
-                            }
-                        }
-                        else if (txpdo[motor]->statusword & SW_SWITCH_ON_DISABLED_BIT)
-                        {
-                            rxpdo[motor]->controlword = CW_SHUTDOWN;
-                            if (++g_motor_state[motor].init_wait > 50)
-                            {
-                                g_motor_state[motor].state = STATE_INIT;
-                                g_motor_state[motor].init_step = 0;
-                                g_motor_state[motor].init_wait = 0;
-                            }
-                        }
-                        else
+                        // After significant time, proceed anyway
+                        if (zero_statusword_count[motor] > 500)
                         {
                             g_motor_state[motor].state = STATE_INIT;
                             g_motor_state[motor].init_step = 0;
                             g_motor_state[motor].init_wait = 0;
                         }
-                        break;
-
-                    case STATE_INIT:
-                        switch (g_motor_state[motor].init_step)
-                        {
-                            // Deep reset state
-                            case 0:
-                                if (g_motor_state[motor].init_wait == 0)
-                                {
-                                    rxpdo[motor]->controlword = 0;
-                                }
-                                else if (g_motor_state[motor].init_wait == 20)
-                                {
-                                    rxpdo[motor]->controlword = CW_FAULT_RESET;
-                                }
-                                else if (g_motor_state[motor].init_wait == 40)
-                                {
-                                    rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
-                                }
-                                else if (g_motor_state[motor].init_wait == 60)
-                                {
-                                    rxpdo[motor]->controlword = CW_FAULT_RESET;
-                                }
-                                else if (g_motor_state[motor].init_wait == 80)
-                                {
-                                    rxpdo[motor]->controlword = CW_SHUTDOWN;
-                                }
-
-                                if (++g_motor_state[motor].init_wait > 100)
-                                {
-                                    g_motor_state[motor].init_step = 1;
-                                    g_motor_state[motor].init_wait = 0;
-                                }
-                                break;
-
-                            case 1:
-                                rxpdo[motor]->controlword = CW_SHUTDOWN;
-
-                                uint8_t state_bits = get_cia402_state(txpdo[motor]->statusword);
-
-                                if ((state_bits & ~SW_VOLTAGE_ENABLED_BIT) == get_cia402_state_code("Ready To Switch On"))
-                                {
-                                    g_motor_state[motor].init_step = 2;
-                                }
-                                else if (++g_motor_state[motor].init_wait > 2000)
-                                {
-                                    g_motor_state[motor].init_step = 0;
-                                    g_motor_state[motor].init_wait = 0;
-                                }
-                                break;
-
-                            case 2:
-                                rxpdo[motor]->controlword = CW_SWITCHON;
-
-                                state_bits = get_cia402_state(txpdo[motor]->statusword);
-
-                                if (state_bits == get_cia402_state_code("Switched On"))
-                                {
-                                    g_motor_state[motor].init_step = 3;
-                                }
-                                break;
-
-                            case 3:
-                                if (txpdo[motor]->op_mode_display == rxpdo[motor]->op_mode
-                                    || ++g_motor_state[motor].init_wait > 500)
-                                {
-                                    g_motor_state[motor].init_step = 4;
-                                    g_motor_state[motor].init_wait = 0;
-                                }
-                                break;
-
-                            case 4:
-                                rxpdo[motor]->controlword = CW_ENABLE;
-
-                                state_bits = get_cia402_state(txpdo[motor]->statusword);
-
-                                if (state_bits == get_cia402_state_code("Operation Enabled"))
-                                {
-                                    g_motor_state[motor].state = STATE_OPERATIONAL;
-                                }
-                                break;
-                        }
-                        break;
-
-                    case STATE_OPERATIONAL:
+                    }
+                    else if (txpdo[motor]->statusword & SW_FAULT_BIT)
                     {
-                        uint16_t controlword = CW_ENABLE;
-
-                        if (txpdo[motor]->statusword & SW_FAULT_BIT)
+                        if (handle_fault_state(rxpdo[motor], txpdo[motor]->statusword, &g_motor_state[motor], motor))
                         {
-                            printf("Motor %d: Fault detected during operation\n", motor);
-                            if (handle_fault_state(rxpdo[motor], txpdo[motor]->statusword, &g_motor_state[motor], motor))
-                            {
-                                break;  // Exit the state handler, fault is being handled
-                            }
-                        }
-
-                        // Check for state mismatch
-                        if (!(txpdo[motor]->statusword & SW_OPERATION_ENABLED_BIT))
-                        {
-                            printf("Warning: Motor %d Operation disabled during operation, reinitializing\n", motor);
-                            g_motor_state[motor].state = STATE_BOOT;
-                            g_motor_state[motor].init_step = 0;
-                            g_motor_state[motor].init_wait = 0;
                             break;
                         }
 
-                        if (txpdo[motor]->statusword & SW_OPERATION_ENABLED_BIT)
+                        if (++g_motor_state[motor].init_wait > 100)
                         {
-                            if (enable)
-                            {
-                                if (motor == LEFT_MOTOR)
-                                {
-                                    g_motor_state[motor].target_velocity = velocities.left_velocity;
-                                }
-                                else if (motor == RIGHT_MOTOR)
-                                {
-                                    g_motor_state[motor].target_velocity = velocities.right_velocity;
-                                }
-                            }
-                            else if (!enable || !estop)  // estop logic inversed
-                            {
-                                // Enable switched off
-                                rxpdo[motor]->controlword = CW_QUICKSTOP;
-                                rxpdo[motor]->target_velocity = 0;
-
-                                if (!(txpdo[motor]->statusword & SW_QUICK_STOP_BIT))
-                                {
-                                    rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
-                                    g_motor_state[motor].state = STATE_BOOT;
-                                    g_motor_state[motor].init_step = 0;
-                                    g_motor_state[motor].init_wait = 0;
-                                }
-                                continue;
-                            }
-
-                            if (g_motor_state[motor].target_velocity != g_motor_state[motor].current_velocity)
-                            {
-                                rxpdo[motor]->target_velocity = g_motor_state[motor].target_velocity;
-                                g_motor_state[motor].current_velocity = g_motor_state[motor].target_velocity;
-
-                                controlword |= CW_NEW_VELOCITY_SETPOINT;
-                                g_motor_state[motor].new_setpoint_active = true;
-                            }
-                            else if (g_motor_state[motor].new_setpoint_active)
-                            {
-                                if (txpdo[motor]->statusword & SW_TARGET_REACHED_BIT)
-                                {
-                                    controlword &= ~CW_NEW_VELOCITY_SETPOINT;
-                                    g_motor_state[motor].new_setpoint_active = false;
-                                }
-                            }
-
-                            rxpdo[motor]->controlword = controlword;
+                            g_motor_state[motor].fault_reset_attempts = 0;
+                            g_motor_state[motor].init_wait = 0;
+                            g_motor_state[motor].state = STATE_INIT;
                         }
                     }
+                    else if (txpdo[motor]->statusword & SW_SWITCH_ON_DISABLED_BIT)
+                    {
+                        rxpdo[motor]->controlword = CW_SHUTDOWN;
+                        if (++g_motor_state[motor].init_wait > 50)
+                        {
+                            g_motor_state[motor].state = STATE_INIT;
+                            g_motor_state[motor].init_step = 0;
+                            g_motor_state[motor].init_wait = 0;
+                        }
+                    }
+                    else
+                    {
+                        g_motor_state[motor].state = STATE_INIT;
+                        g_motor_state[motor].init_step = 0;
+                        g_motor_state[motor].init_wait = 0;
+                    }
                     break;
+
+                case STATE_INIT:
+                    switch (g_motor_state[motor].init_step)
+                    {
+                    // Deep reset state
+                    case 0:
+                        if (g_motor_state[motor].init_wait == 0)
+                        {
+                            rxpdo[motor]->controlword = 0;
+                        }
+                        else if (g_motor_state[motor].init_wait == 20)
+                        {
+                            rxpdo[motor]->controlword = CW_FAULT_RESET;
+                        }
+                        else if (g_motor_state[motor].init_wait == 40)
+                        {
+                            rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
+                        }
+                        else if (g_motor_state[motor].init_wait == 60)
+                        {
+                            rxpdo[motor]->controlword = CW_FAULT_RESET;
+                        }
+                        else if (g_motor_state[motor].init_wait == 80)
+                        {
+                            rxpdo[motor]->controlword = CW_SHUTDOWN;
+                        }
+
+                        if (++g_motor_state[motor].init_wait > 100)
+                        {
+                            g_motor_state[motor].init_step = 1;
+                            g_motor_state[motor].init_wait = 0;
+                        }
+                        break;
+
+                    case 1:
+                        rxpdo[motor]->controlword = CW_SHUTDOWN;
+
+                        uint8_t state_bits = get_cia402_state(txpdo[motor]->statusword);
+
+                        if ((state_bits & ~SW_VOLTAGE_ENABLED_BIT) == get_cia402_state_code("Ready To Switch On"))
+                        {
+                            g_motor_state[motor].init_step = 2;
+                        }
+                        else if (++g_motor_state[motor].init_wait > 2000)
+                        {
+                            g_motor_state[motor].init_step = 0;
+                            g_motor_state[motor].init_wait = 0;
+                        }
+                        break;
+
+                    case 2:
+                        rxpdo[motor]->controlword = CW_SWITCHON;
+
+                        state_bits = get_cia402_state(txpdo[motor]->statusword);
+
+                        if (state_bits == get_cia402_state_code("Switched On"))
+                        {
+                            g_motor_state[motor].init_step = 3;
+                        }
+                        break;
+
+                    case 3:
+                        if (txpdo[motor]->op_mode_display == rxpdo[motor]->op_mode || ++g_motor_state[motor].init_wait > 500)
+                        {
+                            g_motor_state[motor].init_step = 4;
+                            g_motor_state[motor].init_wait = 0;
+                        }
+                        break;
+
+                    case 4:
+                        rxpdo[motor]->controlword = CW_ENABLE;
+
+                        state_bits = get_cia402_state(txpdo[motor]->statusword);
+
+                        if (state_bits == get_cia402_state_code("Operation Enabled"))
+                        {
+                            g_motor_state[motor].state = STATE_OPERATIONAL;
+                        }
+                        break;
+                    }
+                    break;
+
+                case STATE_OPERATIONAL:
+                {
+                    uint16_t controlword = CW_ENABLE;
+
+                    if (txpdo[motor]->statusword & SW_FAULT_BIT)
+                    {
+                        printf("Motor %d: Fault detected during operation\n", motor);
+                        if (handle_fault_state(rxpdo[motor], txpdo[motor]->statusword, &g_motor_state[motor], motor))
+                        {
+                            break; // Exit the state handler, fault is being handled
+                        }
+                    }
+
+                    // Check for state mismatch
+                    if (!(txpdo[motor]->statusword & SW_OPERATION_ENABLED_BIT))
+                    {
+                        printf("Warning: Motor %d Operation disabled during operation, reinitializing\n", motor);
+                        g_motor_state[motor].state = STATE_BOOT;
+                        g_motor_state[motor].init_step = 0;
+                        g_motor_state[motor].init_wait = 0;
+                        break;
+                    }
+
+                    if (txpdo[motor]->statusword & SW_OPERATION_ENABLED_BIT)
+                    {
+                        if (enable)
+                        {
+                            if (motor == LEFT_MOTOR)
+                            {
+                                g_motor_state[motor].target_velocity = velocities.left_velocity;
+                            }
+                            else if (motor == RIGHT_MOTOR)
+                            {
+                                g_motor_state[motor].target_velocity = velocities.right_velocity;
+                            }
+                        }
+                        else if (!enable || !estop) // estop logic inversed
+                        {
+                            /* Enable switched off*/
+                            rxpdo[motor]->controlword = CW_QUICKSTOP;
+                            rxpdo[motor]->target_velocity = 0;
+
+                            if (!(txpdo[motor]->statusword & SW_QUICK_STOP_BIT))
+                            {
+                                rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
+                                g_motor_state[motor].state = STATE_BOOT;
+                                g_motor_state[motor].init_step = 0;
+                                g_motor_state[motor].init_wait = 0;
+                            }
+                            continue;
+                        }
+
+                        if (g_motor_state[motor].target_velocity != g_motor_state[motor].current_velocity)
+                        {
+                            rxpdo[motor]->target_velocity = g_motor_state[motor].target_velocity;
+                            g_motor_state[motor].current_velocity = g_motor_state[motor].target_velocity;
+
+                            controlword |= CW_NEW_VELOCITY_SETPOINT;
+                            g_motor_state[motor].new_setpoint_active = true;
+                        }
+                        else if (g_motor_state[motor].new_setpoint_active)
+                        {
+                            if (txpdo[motor]->statusword & SW_TARGET_REACHED_BIT)
+                            {
+                                controlword &= ~CW_NEW_VELOCITY_SETPOINT;
+                                g_motor_state[motor].new_setpoint_active = false;
+                            }
+                        }
+
+                        rxpdo[motor]->controlword = controlword;
+                    }
+                }
+                break;
                 }
             }
 
@@ -588,7 +640,7 @@ void* motor_control_cyclic_task(void* arg)
             if (++log_interval >= 100)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
-                perf_log_output(&perf_metrics); 
+                perf_log_output(&perf_metrics);
                 log_interval = 0;
             }
         }
@@ -598,12 +650,10 @@ void* motor_control_cyclic_task(void* arg)
             {
                 g_motor_state[motor].consecutive_comm_errors++;
 
-                if (g_motor_state[motor].consecutive_comm_errors >= MAX_COMM_ERRORS
-                    && !ec_slave[g_motor_control.slave_indices[motor]].islost)
+                if (g_motor_state[motor].consecutive_comm_errors >= MAX_COMM_ERRORS_BEFORE_RESET && !ec_slave[g_motor_control.slave_indices[motor]].islost)
                 {
                     ec_slave[g_motor_control.slave_indices[motor]].islost = TRUE;
                     printf("Motor %d Connection lost\n", motor);
-                    clock_gettime(CLOCK_MONOTONIC, &g_motor_control.last_reconnect_attempt);
                 }
             }
 
@@ -622,49 +672,30 @@ void* motor_control_cyclic_task(void* arg)
                 struct timespec current_time;
                 clock_gettime(CLOCK_MONOTONIC, &current_time);
 
-                if (!g_motor_control.reconnect_in_progress)
+                g_motor_control.reconnection_attempts++;
+                g_motor_control.reconnect_in_progress = true;
+
+                attempt_slave_full_recovery();
+                
+                for (int motor = 0; motor < g_motor_control.num_motors; motor++)
                 {
-                    g_motor_control.reconnection_attempts++;
-                    g_motor_control.reconnect_in_progress = true;
-
-                    if (attempt_ethercat_reconnection())
-                    {
-                        expected_wkc = (ec_group[0].outputsWKC * 2) + ec_group[0].inputsWKC;
-
-                        for (int motor = 0; motor < g_motor_control.num_motors; motor++)
-                        {
-                            g_motor_state[motor].consecutive_comm_errors = 0;
-                            g_motor_state[motor].state = STATE_BOOT;
-                            g_motor_state[motor].init_step = 0;
-                            g_motor_state[motor].init_wait = 0;
-                            g_motor_state[motor].fault_reset_attempts = 0;
-                        }
-                        g_motor_control.reconnection_attempts = 0;
-                    }
-                    else
-                    {
-                        printf("EtherCAT reconnection failed\n");
-                    }
-
-                    g_motor_control.reconnect_in_progress = false;
-                    g_motor_control.last_reconnect_attempt = current_time;
+                    g_motor_state[motor].consecutive_comm_errors = 0;
+                    g_motor_state[motor].state = STATE_BOOT;
+                    g_motor_state[motor].init_step = 0;
+                    g_motor_state[motor].init_wait = 0;
+                    g_motor_state[motor].fault_reset_attempts = 0;
                 }
             }
         }
-
+        
         ec_send_processdata();
-
         perf_send_complete(&perf_metrics);
     }
+    printf("Shutting down motor(s)..\n");
 
-    printf("Shutting down motor(s)\n");
-    int shutdown_cycles = 200;
-
-    while (shutdown_cycles-- > 0)
+    for (int i = 0; i < 5; i++)
     {
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, &tleft);
-
-        // Next cycle time
         ts.tv_nsec += cycletime_ns;
         if (ts.tv_nsec >= 1000000000)
         {
@@ -676,21 +707,18 @@ void* motor_control_cyclic_task(void* arg)
 
         for (int motor = 0; motor < g_motor_control.num_motors; motor++)
         {
-            if (shutdown_cycles > 100)
-            {
-                rxpdo[motor]->target_velocity = 0;
-                rxpdo[motor]->controlword = CW_QUICKSTOP;
-            }
-            else
-            {
-                rxpdo[motor]->target_velocity = 0;
-                rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
-            }
+            rxpdo[motor]->target_velocity = 0;
+            rxpdo[motor]->controlword = CW_QUICKSTOP;
         }
-
+        
         ec_send_processdata();
     }
 
-    printf("Motor shutdown sequence complete\n");
+    for (int motor = 0; motor < g_motor_control.num_motors; motor++)
+    {
+        rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
+    }
+
+    ec_send_processdata();
     return NULL;
 }

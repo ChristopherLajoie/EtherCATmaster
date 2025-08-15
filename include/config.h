@@ -32,12 +32,10 @@ typedef struct
 
 typedef struct
 {
-    // EtherCAT parameters
     char interface[64];
     int cycletime;
     int num_motors;
 
-    // Motion parameters
     uint16_t max_torque;
     uint32_t max_velocity;
     uint32_t profile_acceleration;
@@ -45,28 +43,20 @@ typedef struct
     uint32_t quick_stop_deceleration;
     int16_t motion_profile_type;
 
-    // Joystick parameters
     int joystick_min;
     int joystick_max;
     int joystick_center;
     int joystick_deadzone;
 
-    // Differential drive parameters
     float turn_factor;
     int reverse_left_motor;
     int reverse_right_motor;
 
-    // I2t protection parameters
-    uint32_t i2t_peak_time_ms; // Peak time (0x200A:2) in milliseconds
+    uint32_t i2t_peak_time_ms; 
 } MotorConfig;
 
 extern MotorConfig g_config;
 
-/**
- * @brief Load configuration from INI file
- * @param filename Path to the INI file
- * @return true on success, false on failure
- */
 bool load_config(const char *filename);
 
-#endif // CONFIG_H
+#endif 

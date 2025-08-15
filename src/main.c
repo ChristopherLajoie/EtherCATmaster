@@ -1,9 +1,6 @@
 /**
  * @file main.c
- * @brief Main program for EtherCAT motor control system - NXP Yocto RT version
- *
- * Initializes EtherCAT communication with Synapticon
- * Actilink-S servo drives and controls them using CAN interface.
+ * @brief Main program for Master - NXP Yocto RT version
  */
 
 #include "common.h"
@@ -12,7 +9,7 @@
 #include "motor_driver.h"
 #include "config.h"
 
-#define SLEEP_INTERVAL_US 1000000 // 1 second
+#define MAIN_SLEEP_INTERVAL_US 1000000
 
 // UPDATE THESE PARAMETERS IN CONFIG FILE NOT HERE
 MotorControl g_motor_control = {.ifname = "eth0",
@@ -23,12 +20,12 @@ MotorControl g_motor_control = {.ifname = "eth0",
                                 .reconnect_in_progress = false,
                                 .reconnection_attempts = 0};
 
-static void signal_handler(int sig)
+static void signal_handler(/*int sig*/)
 {
     static volatile sig_atomic_t signal_count = 0;
     signal_count++;
 
-    printf("\nSignal %d received, stopping program... (%d)\n", sig, signal_count);
+    printf("\nStopping program..\n");
 
     if (signal_count == 1)
     {
@@ -36,7 +33,7 @@ static void signal_handler(int sig)
     }
     else
     {
-        printf("Forcing exit...\n");
+        printf("Forcing exit..\n");
         exit(EXIT_FAILURE);
     }
 }
@@ -64,11 +61,6 @@ static int setup_signal_handlers(void)
     return 0;
 }
 
-static bool initialize_ethercat(void)
-{
-    return ethercat_init();
-}
-
 static void cleanup_resources(void)
 {
     ec_close();
@@ -79,22 +71,18 @@ int main(int argc, char *argv[])
 {
     const char *config_filename;
 
-    fprintf(stderr,"Build v1.1\n");
+    fprintf(stderr, "Build IMX91 V1.0\n");
 
-    // Check for command-line argument for config file path
     if (argc > 1)
     {
         config_filename = argv[1];
     }
     else
     {
-        // If no argument, print usage and exit
         fprintf(stderr, "Error: Configuration file not specified.\n");
-        fprintf(stderr, "Usage: %s <path_to_config_file>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    // Load configuration from the specified file
     if (!load_config(config_filename))
     {
         fprintf(stderr, "Failed to load configuration from '%s'\n", config_filename);
@@ -119,7 +107,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (!initialize_ethercat())
+    if (!ethercat_init())
     {
         cleanup_resources();
         return EXIT_FAILURE;
@@ -138,17 +126,17 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    /* Set stdout to unbuffered mode for immediate output */
     setvbuf(stdout, NULL, _IONBF, 0);
 
     while (g_motor_control.run)
     {
-        usleep(SLEEP_INTERVAL_US);
+        usleep(MAIN_SLEEP_INTERVAL_US);
     }
 
     pthread_join(g_motor_control.cyclic_thread, NULL);
 
     cleanup_resources();
 
-    printf("Program terminated successfully\n");
     return EXIT_SUCCESS;
 }

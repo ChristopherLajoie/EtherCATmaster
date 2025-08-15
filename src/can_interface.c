@@ -194,22 +194,22 @@ int get_button_value(int bit_position)
 
 int get_enable_button(void)
 {
-    return get_button_value(6);  // Enable bit (bit 6) from BUTTONS block
+    return get_button_value(6);  
 }
 
 int get_speed_button(void)
 {
-    return get_button_value(14);  // Speed bit (bit 14) from BUTTONS block
+    return get_button_value(14); 
 }
 
 int get_horn_button(void)
 {
-    return get_button_value(16);  // Horn bit (bit 16) from BUTTONS block
+    return get_button_value(16);  
 }
 
 int get_estop_button(void)
 {
-    return get_button_value(63);  // Estop bit (bit 63) from BUTTONS block
+    return get_button_value(63);  
 }
 
 int get_y_axis(void)
@@ -219,7 +219,7 @@ int get_y_axis(void)
 
     if (receive_can_message(MOVES_ID, data, &data_length, 1000))
     {
-        return data[0];  // Y_Axis value (bits 0-7) from MOVES block
+        return data[0];  
     }
     return -1;
 }
@@ -231,7 +231,7 @@ int get_x_axis(void)
 
     if (receive_can_message(MOVES_ID, data, &data_length, 1000))
     {
-        return data[1];  // X_Axis value (bits 8-15) from MOVES block
+        return data[1];  
     }
     return -1;
 }
@@ -256,7 +256,6 @@ static int is_data_stale(void)
     return (diff_ms > MAX_DATA_AGE_MS);
 }
 
-// Monitor thread that continuously updates CAN values
 static void* can_monitor_thread(void* arg)
 {
     (void)arg;
@@ -269,7 +268,6 @@ static void* can_monitor_thread(void* arg)
 
     while (keep_running)
     {
-        // Fetch all data in one batch with proper error handling
         temp_enable = get_enable_button();
         temp_x = get_x_axis();
         temp_y = get_y_axis();
@@ -279,7 +277,6 @@ static void* can_monitor_thread(void* arg)
 
         valid_reading = 1;
 
-        // Verify readings
         if (temp_enable != 0 && temp_enable != 1)
         {
             valid_reading = 0;
@@ -287,7 +284,6 @@ static void* can_monitor_thread(void* arg)
 
         if (valid_reading)
         {
-            /* Lock mutex before updating shared data */
             pthread_mutex_lock(&can_vars.mutex);
 
             can_vars.enable = temp_enable;
@@ -300,7 +296,6 @@ static void* can_monitor_thread(void* arg)
             can_vars.update_count++;
             clock_gettime(CLOCK_MONOTONIC, &can_vars.last_update);
 
-            /* Unlock mutex */
             pthread_mutex_unlock(&can_vars.mutex);
         }
         else
@@ -318,21 +313,18 @@ static void* can_monitor_thread(void* arg)
 
         pthread_testcancel();
 
-        /* Sleep to avoid excessive CPU usage */
         usleep(CAN_POLL_INTERVAL_MS * 1000);
     }
 
     return NULL;
 }
 
-// Public interface functions
-
 int init_can_interface(void)
 {
     pthread_mutex_init(&can_vars.mutex, NULL);
 
     memset(&can_vars, 0, sizeof(CANVariables));
-    can_vars.enable = 1; /* Default to enabled */
+    can_vars.enable = 1; 
     clock_gettime(CLOCK_MONOTONIC, &can_vars.last_update);
     can_vars.monitoring_active = 0;
 
@@ -371,11 +363,9 @@ void stop_can_interface(void)
     pthread_mutex_destroy(&can_vars.mutex);
     can_vars.monitoring_active = 0;
 
-    // Shutdown CAN bus
     shutdown_can_bus();
 }
 
-// LED control functions
 int set_led(int bit_position, int state)
 {
     uint8_t data[8] = {0};
@@ -390,25 +380,24 @@ int set_led(int bit_position, int state)
 
 int set_yellow_bat_led(int state)
 {
-    return set_led(0, state);  // Yellow_Bat_Led (bit 0) in LED block
+    return set_led(0, state);  
 }
 
 int set_red_bat_led(int state)
 {
-    return set_led(1, state);  // Red_Bat_Led (bit 1) in LED block
+    return set_led(1, state);  
 }
 
 int set_overload_led(int state)
 {
-    return set_led(2, state);  // Overload_Led (bit 2) in LED block
+    return set_led(2, state); 
 }
 
 int set_aux_led(int state)
 {
-    return set_led(3, state);  // Aux_Led (bit 3) in LED block
+    return set_led(3, state);  
 }
 
-// High-level interface functions
 int get_can_enable(void)
 {
     int result;
@@ -442,7 +431,7 @@ int get_can_x_axis(void)
 
     if (is_data_stale())
     {
-        result = 128; /* Default to center position */
+        result = 128; // Default to center position 
     }
     else
     {
@@ -461,7 +450,7 @@ int get_can_y_axis(void)
 
     if (is_data_stale())
     {
-        result = 128; /* Default to center position */
+        result = 128; // Default to center position 
     }
     else
     {
@@ -480,7 +469,7 @@ int get_can_horn(void)
 
     if (is_data_stale())
     {
-        result = 0; /* Default to not pressed */
+        result = 0; 
     }
     else
     {
@@ -499,7 +488,7 @@ int get_can_estop(void)
 
     if (is_data_stale())
     {
-        result = 0; /* Default to not engaged */
+        result = 0; 
     }
     else
     {
@@ -518,7 +507,7 @@ int get_can_speed(void)
 
     if (is_data_stale())
     {
-        result = 0; /* Default to normal speed */
+        result = 0;
     }
     else
     {

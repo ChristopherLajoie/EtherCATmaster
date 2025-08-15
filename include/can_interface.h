@@ -1,9 +1,6 @@
 /**
  * @file can_interface.h
  * @brief CAN bus interface for joystick and control inputs
- *
- * Provides interface for communication with input devices (joystick,
- * buttons) over CAN bus.
  */
 
 #ifndef CAN_INTERFACE_H
@@ -34,13 +31,11 @@ extern CANVariables can_vars;
 int init_can_interface(void);
 void stop_can_interface(void);
 
-// Low-level CAN functions
 int initialize_can_bus(const char* interface);
 void shutdown_can_bus(void);
 int send_can_message(int can_id, uint8_t* data, int data_length);
 int receive_can_message(int can_id, uint8_t* data, int* data_length, int timeout_ms);
 
-// High-level interface functions
 int get_can_enable(void);
 int get_can_x_axis(void);
 int get_can_y_axis(void);
@@ -49,7 +44,6 @@ int get_can_estop(void);
 int get_can_speed(void);
 void print_can_status(void);
 
-// LED control functions
 int set_yellow_bat_led(int state);
 int set_red_bat_led(int state);
 int set_overload_led(int state);

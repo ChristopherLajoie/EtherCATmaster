@@ -11,12 +11,11 @@ MotorConfig g_config;
 static int config_handler(void *user, const char *section, const char *name, const char *value);
 
 static const ConfigMapping config_map[] = {
-    // EtherCAT parameters
+
     {"ethercat", "interface", TYPE_STRING, offsetof(MotorConfig, interface), sizeof(((MotorConfig *)0)->interface)},
     {"ethercat", "cycletime", TYPE_INT, offsetof(MotorConfig, cycletime), 0},
     {"ethercat", "num_motors", TYPE_INT, offsetof(MotorConfig, num_motors), 0},
 
-    // Motion parameters
     {"motion_parameters", "max_torque", TYPE_UINT16, offsetof(MotorConfig, max_torque), 0},
     {"motion_parameters", "max_velocity", TYPE_UINT32, offsetof(MotorConfig, max_velocity), 0},
     {"motion_parameters", "profile_acceleration", TYPE_UINT32, offsetof(MotorConfig, profile_acceleration), 0},
@@ -24,21 +23,17 @@ static const ConfigMapping config_map[] = {
     {"motion_parameters", "quick_stop_deceleration", TYPE_UINT32, offsetof(MotorConfig, quick_stop_deceleration), 0},
     {"motion_parameters", "motion_profile_type", TYPE_INT16, offsetof(MotorConfig, motion_profile_type), 0},
 
-    // Joystick parameters
     {"joystick", "min_value", TYPE_INT, offsetof(MotorConfig, joystick_min), 0},
     {"joystick", "max_value", TYPE_INT, offsetof(MotorConfig, joystick_max), 0},
     {"joystick", "center_value", TYPE_INT, offsetof(MotorConfig, joystick_center), 0},
     {"joystick", "deadzone", TYPE_INT, offsetof(MotorConfig, joystick_deadzone), 0},
 
-    // Differential drive parameters
     {"differential_drive", "turn_factor", TYPE_FLOAT, offsetof(MotorConfig, turn_factor), 0},
     {"differential_drive", "reverse_left_motor", TYPE_INT, offsetof(MotorConfig, reverse_left_motor), 0},
     {"differential_drive", "reverse_right_motor", TYPE_INT, offsetof(MotorConfig, reverse_right_motor), 0},
 
-    // I2t protection parameters
     {"i2t_protection", "peak_time_ms", TYPE_UINT32, offsetof(MotorConfig, i2t_peak_time_ms), 0},
 };
-
 
 bool load_config(const char *filename)
 {
@@ -104,12 +99,6 @@ static int config_handler(void *user, const char *section, const char *name, con
 
             return 1;
         }
-    }
-
-    // Silently ignore logging and HMI parameters from old config files
-    if (strcmp(section, "logging") == 0 || strcmp(section, "realtime_hmi") == 0)
-    {
-        return 1; // Ignore but don't error
     }
 
     fprintf(stderr, "Warning: Unknown configuration option [%s]%s\n", section, name);
