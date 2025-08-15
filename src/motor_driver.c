@@ -12,6 +12,9 @@
 motor_control_state_t g_motor_state[MAX_MOTORS];
 int32_t max_vel = 0;
 
+static bool g_motor_initialization_started[MAX_MOTORS] = {false};
+static int g_motor_start_delay[MAX_MOTORS] = {0};
+
 void init_motor_control_state(motor_control_state_t *state)
 {
     if (state == NULL)
@@ -207,6 +210,22 @@ bool attempt_slave_full_recovery()
         usleep(POWER_LOSS_RESET_DELAY_US);
     }
 
+    for (int motor = 0; motor < g_motor_control.num_motors; motor++)
+    {
+        g_motor_state[motor].consecutive_comm_errors = 0;
+        g_motor_state[motor].state = STATE_BOOT;
+        g_motor_state[motor].init_step = 0;
+        g_motor_state[motor].init_wait = 0;
+        g_motor_state[motor].fault_reset_attempts = 0;
+        g_motor_state[motor].last_reported_fault_id = 0;
+        g_motor_state[motor].target_velocity = 0;
+        g_motor_state[motor].current_velocity = 0;
+        g_motor_state[motor].new_setpoint_active = false;
+        
+        g_motor_initialization_started[motor] = false;
+        g_motor_start_delay[motor] = 0;
+    }
+    
     return true;
 }
 
@@ -283,15 +302,8 @@ bool handle_fault_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state
 
         if (state->last_reported_fault_id != current_state)
         {
-            printf("Motor %d Fault detected: %s\n", motor_index, get_cia402_state_string(current_state));
+            printf("Motor %d Fault detected\n", motor_index);
 
-            printf("  Fault: %s, Ready: %s, Switched On: %s, Op Enabled: %s\n",
-                   (statusword & SW_FAULT_BIT) ? "YES" : "NO",
-                   (statusword & SW_READY_TO_SWITCH_ON_BIT) ? "YES" : "NO",
-                   (statusword & SW_SWITCHED_ON_BIT) ? "YES" : "NO",
-                   (statusword & SW_OPERATION_ENABLED_BIT) ? "YES" : "NO");
-
-            // Read the detailed fault codes
             fault_codes_t fault_codes;
             int slave_index = g_motor_control.slave_indices[motor_index];
             if (read_fault_codes(slave_index, &fault_codes))
@@ -309,37 +321,38 @@ bool handle_fault_state(rxpdo_t *rxpdo, uint16_t statusword, motor_control_state
             state->fault_reset_attempts = 0;
         }
 
-        // Keep existing fault reset logic
-        static int reset_step = 0;
+        static int reset_step[MAX_MOTORS] = {0};
+        static int reset_hold_count[MAX_MOTORS] = {0};
 
-        switch (reset_step)
+        switch (reset_step[motor_index])
         {
         case 0:
-            rxpdo->controlword = 0;
+            rxpdo->controlword = CW_FAULT_RESET;
             break;
         case 1:
-            rxpdo->controlword = CW_FAULT_RESET;
+            rxpdo->controlword = 0;
             break;
         case 2:
             rxpdo->controlword = CW_SHUTDOWN;
             break;
-        case 3:
-            rxpdo->controlword = CW_DISABLEVOLTAGE;
-            break;
         }
 
-        reset_step = (reset_step + 1) % 4;
+        if (++reset_hold_count[motor_index] >= 10)
+        {
+            reset_step[motor_index] = (reset_step[motor_index] + 1) % 3;
+            reset_hold_count[motor_index] = 0;
+        }
+
         state->fault_reset_attempts++;
 
         if (state->fault_reset_attempts > 60)
         {
-            printf("Motor %d fault reset unsuccessful after %d attempts, proceeding to init\n",
-                   motor_index,
-                   state->fault_reset_attempts);
             state->fault_reset_attempts = 0;
             state->state = STATE_INIT;
             state->init_step = 0;
             state->init_wait = 0;
+            reset_step[motor_index] = 0;
+            reset_hold_count[motor_index] = 0;
         }
 
         return true;
@@ -430,6 +443,20 @@ void *motor_control_cyclic_task(void *arg)
 
             for (int motor = 0; motor < g_motor_control.num_motors; motor++)
             {
+                if (motor > 0 && !g_motor_initialization_started[motor] && g_motor_state[0].state != STATE_OPERATIONAL)
+                {
+                    g_motor_start_delay[motor]++;
+                    if (g_motor_start_delay[motor] < 50)
+                    {
+                        continue;
+                    }
+                    g_motor_initialization_started[motor] = true;
+                }
+                else if (motor == 0)
+                {
+                    g_motor_initialization_started[motor] = true;
+                }
+
                 switch (g_motor_state[motor].state)
                 {
                 case STATE_BOOT:
@@ -439,12 +466,12 @@ void *motor_control_cyclic_task(void *arg)
                         rxpdo[motor]->controlword = CW_DISABLEVOLTAGE;
                         zero_statusword_count[motor]++;
 
-                        // After significant time, proceed anyway
-                        if (zero_statusword_count[motor] > 500)
+                        if (zero_statusword_count[motor] > 100)  
                         {
                             g_motor_state[motor].state = STATE_INIT;
                             g_motor_state[motor].init_step = 0;
                             g_motor_state[motor].init_wait = 0;
+                            zero_statusword_count[motor] = 0;
                         }
                     }
                     else if (txpdo[motor]->statusword & SW_FAULT_BIT)
@@ -454,7 +481,7 @@ void *motor_control_cyclic_task(void *arg)
                             break;
                         }
 
-                        if (++g_motor_state[motor].init_wait > 100)
+                        if (++g_motor_state[motor].init_wait > 50)  
                         {
                             g_motor_state[motor].fault_reset_attempts = 0;
                             g_motor_state[motor].init_wait = 0;
@@ -464,7 +491,7 @@ void *motor_control_cyclic_task(void *arg)
                     else if (txpdo[motor]->statusword & SW_SWITCH_ON_DISABLED_BIT)
                     {
                         rxpdo[motor]->controlword = CW_SHUTDOWN;
-                        if (++g_motor_state[motor].init_wait > 50)
+                        if (++g_motor_state[motor].init_wait > 25)  
                         {
                             g_motor_state[motor].state = STATE_INIT;
                             g_motor_state[motor].init_step = 0;
@@ -520,8 +547,9 @@ void *motor_control_cyclic_task(void *arg)
                         if ((state_bits & ~SW_VOLTAGE_ENABLED_BIT) == get_cia402_state_code("Ready To Switch On"))
                         {
                             g_motor_state[motor].init_step = 2;
+                            g_motor_state[motor].init_wait = 0;
                         }
-                        else if (++g_motor_state[motor].init_wait > 2000)
+                        else if (++g_motor_state[motor].init_wait > 500)
                         {
                             g_motor_state[motor].init_step = 0;
                             g_motor_state[motor].init_wait = 0;
@@ -556,6 +584,11 @@ void *motor_control_cyclic_task(void *arg)
                         {
                             g_motor_state[motor].state = STATE_OPERATIONAL;
                         }
+                        else if (++g_motor_state[motor].init_wait > 200)
+                        {
+                            g_motor_state[motor].init_step = 0;
+                            g_motor_state[motor].init_wait = 0;
+                        }
                         break;
                     }
                     break;
@@ -569,7 +602,7 @@ void *motor_control_cyclic_task(void *arg)
                         printf("Motor %d: Fault detected during operation\n", motor);
                         if (handle_fault_state(rxpdo[motor], txpdo[motor]->statusword, &g_motor_state[motor], motor))
                         {
-                            break; // Exit the state handler, fault is being handled
+                            break; 
                         }
                     }
 
@@ -640,7 +673,7 @@ void *motor_control_cyclic_task(void *arg)
             if (++log_interval >= 100)
             {
                 log_motor_status(rxpdo, txpdo, velocities);
-                perf_log_output(&perf_metrics);
+                // perf_log_output(&perf_metrics);
                 log_interval = 0;
             }
         }
@@ -676,15 +709,6 @@ void *motor_control_cyclic_task(void *arg)
                 g_motor_control.reconnect_in_progress = true;
 
                 attempt_slave_full_recovery();
-                
-                for (int motor = 0; motor < g_motor_control.num_motors; motor++)
-                {
-                    g_motor_state[motor].consecutive_comm_errors = 0;
-                    g_motor_state[motor].state = STATE_BOOT;
-                    g_motor_state[motor].init_step = 0;
-                    g_motor_state[motor].init_wait = 0;
-                    g_motor_state[motor].fault_reset_attempts = 0;
-                }
             }
         }
         

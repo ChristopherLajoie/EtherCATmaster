@@ -11,6 +11,7 @@
 #include "config.h"
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #define STATUS_STATE_MASK 0x6F
 
@@ -36,27 +37,27 @@ uint8_t get_cia402_state(uint16_t statusword)
     uint16_t state_bits = statusword & 0x6F;
 
     if ((state_bits & 0x4F) == 0x00)
-        return 0x00;  // Not Ready to Switch On
+        return 0x00; // Not Ready to Switch On
     if ((state_bits & 0x4F) == 0x40)
-        return 0x40;  // Switch On Disabled
+        return 0x40; // Switch On Disabled
     if ((state_bits & 0x6F) == 0x21)
-        return 0x21;  // Ready to Switch On
+        return 0x21; // Ready to Switch On
     if ((state_bits & 0x6F) == 0x23)
-        return 0x23;  // Switched On
+        return 0x23; // Switched On
     if ((state_bits & 0x6F) == 0x27)
-        return 0x27;  // Operation Enabled
+        return 0x27; // Operation Enabled
     if ((state_bits & 0x6F) == 0x07)
-        return 0x07;  // Quick Stop Active
+        return 0x07; // Quick Stop Active
     if ((state_bits & 0x4F) == 0x0F)
-        return 0x0F;  // Fault Reaction Active
+        return 0x0F; // Fault Reaction Active
     if ((state_bits & 0x4F) == 0x08)
-        return 0x08;  // Fault
+        return 0x08; // Fault
 
     printf("Unknown CIA-402 state: statusword=0x%04X, state_bits=0x%02X\n", statusword, state_bits);
     return 0xFF;
 }
 
-const char* get_cia402_state_string(uint16_t state)
+const char *get_cia402_state_string(uint16_t state)
 {
     for (size_t i = 0; i < CIA402_NUM_STATES - 1; i++)
     {
@@ -69,7 +70,7 @@ const char* get_cia402_state_string(uint16_t state)
     return cia402_states[CIA402_NUM_STATES - 1].description;
 }
 
-uint16_t get_cia402_state_code(const char* state_str)
+uint16_t get_cia402_state_code(const char *state_str)
 {
     if (state_str == NULL)
     {
@@ -87,7 +88,7 @@ uint16_t get_cia402_state_code(const char* state_str)
     return 0xFF;
 }
 
-uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const char* description, const char* unit)
+uint32_t read_drive_parameter(int slave, uint16_t index, uint8_t subindex, const char *description, const char *unit)
 {
     uint32_t value = 0;
     int size = sizeof(value);
@@ -273,48 +274,109 @@ bool configure_pdo_mappings(int slave)
     return true;
 }
 
+static uint64_t get_time_ms(void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)(tv.tv_sec) * 1000 + (uint64_t)(tv.tv_usec) / 1000;
+}
+
 static bool wait_for_preop_state(void)
 {
-    int retry_count = 0;
-    int chk;
-    bool preop_reached = false;
+    ec_slave[0].state = EC_STATE_PRE_OP;
+    ec_writestate(0);
 
-    while (!preop_reached && retry_count < MAX_STATE_TRANSITION_RETRIES)
+    for (int i = 0; i < 50; i++)
     {
-        chk = STATE_CHECK_ITERATIONS;
-        do
+        ec_statecheck(0, EC_STATE_PRE_OP, 100000);
+        if (ec_slave[0].state == EC_STATE_PRE_OP)
         {
-            ec_statecheck(0, EC_STATE_PRE_OP, STATE_CHECK_TIMEOUT_US);
-            if (ec_slave[0].state == EC_STATE_PRE_OP)
+            return true;
+        }
+        usleep(10000);
+    }
+
+    fprintf(stderr, "Failed to reach PRE_OP\n");
+    return false;
+}
+
+static bool wait_for_mailbox_readiness(void)
+{
+    const uint64_t deadline_ms = 3000;
+    const uint32_t poll_interval_ms = 25;
+
+    for (int i = 0; i < g_motor_control.num_motors; i++)
+    {
+        int slave = g_motor_control.slave_indices[i];
+        uint64_t start_time = get_time_ms();
+        bool mailbox_ready = false;
+
+        while ((get_time_ms() - start_time) < deadline_ms)
+        {
+            /* Test mailbox readiness by attempting to read Device Type (0x1000) */
+            uint32_t device_type = 0;
+            int size = sizeof(device_type);
+            int ret = ec_SDOread(slave, 0x1000, 0, FALSE, &size, &device_type, EC_TIMEOUTRXM);
+
+            if (ret > 0)
             {
-                preop_reached = true;
+                mailbox_ready = true;
                 break;
             }
-            usleep(STATE_CHECK_DELAY_US);
-        }
-        while (chk--);
 
-        if (!preop_reached)
+            usleep(poll_interval_ms * 1000);
+        }
+
+        if (!mailbox_ready)
         {
-            ec_slave[0].state = EC_STATE_PRE_OP;
-            ec_writestate(0);
-            retry_count++;
+            fprintf(stderr, "Mailbox not ready for slave %d \n", slave);
+
+            return false;
         }
     }
 
-    if (!preop_reached)
+    return true;
+}
+
+static bool transition_to_safe_op(void)
+{
+    ec_slave[0].state = EC_STATE_SAFE_OP;
+    ec_writestate(0);
+
+    ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
+
+    if (ec_slave[0].state != EC_STATE_SAFE_OP)
     {
-        fprintf(stderr, "Failed to reach PRE_OP\n");
+        fprintf(stderr, "Failed to reach SAFE_OP\n");
+
         return false;
     }
 
     return true;
 }
 
+static bool transition_to_operational(void)
+{
+    ec_slave[0].state = EC_STATE_OPERATIONAL;
+    ec_writestate(0);
+
+    for (int i = 0; i < 30; i++)
+    {
+        ec_statecheck(0, EC_STATE_OPERATIONAL, 100000);
+        if (ec_slave[0].state == EC_STATE_OPERATIONAL)
+        {
+            return true;
+        }
+        usleep(10000);
+    }
+
+    fprintf(stderr, "Failed to reach OPERATIONAL state\n");
+
+    return false;
+}
+
 bool ethercat_init(void)
 {
-    int chk;
-
     /* Initialize SOEM, bind socket to ifname */
     if (!ec_init(g_motor_control.ifname))
     {
@@ -332,10 +394,13 @@ bool ethercat_init(void)
 
     printf("%d slave(s) found and configured.\n", ec_slavecount);
 
-    ec_slave[0].state = EC_STATE_PRE_OP;
-    ec_writestate(0);
-
     if (!wait_for_preop_state())
+    {
+        ec_close();
+        return false;
+    }
+
+    if (!wait_for_mailbox_readiness())
     {
         ec_close();
         return false;
@@ -344,34 +409,33 @@ bool ethercat_init(void)
     for (int i = 0; i < g_motor_control.num_motors; i++)
     {
         int slave_index = g_motor_control.slave_indices[i];
+
         if (!configure_pdo_mappings(slave_index))
         {
+            fprintf(stderr, "Failed to configure PDO mappings for slave %d\n", slave_index);
             ec_close();
             return false;
+        }
+
+        if (i < g_motor_control.num_motors - 1)
+        {
+            usleep(100000);
         }
     }
 
     ec_configdc();
     ec_config_map(&g_motor_control.IOmap);
 
-    ec_slave[0].state = EC_STATE_SAFE_OP;
-    ec_writestate(0);
+    usleep(200000);
 
-    ec_statecheck(0, EC_STATE_SAFE_OP, EC_TIMEOUTSTATE * 4);
-
-    ec_slave[0].state = EC_STATE_OPERATIONAL;
-    ec_writestate(0);
-
-    chk = STATE_CHECK_ITERATIONS;
-    do
+    if (!transition_to_safe_op())
     {
-        ec_statecheck(0, EC_STATE_OPERATIONAL, STATE_CHECK_TIMEOUT_US / 2);
+        ec_close();
+        return false;
     }
-    while (chk-- && (ec_slave[0].state != EC_STATE_OPERATIONAL));
 
-    if (ec_slave[0].state != EC_STATE_OPERATIONAL)
+    if (!transition_to_operational())
     {
-        fprintf(stderr, "Not all slaves reached operational state.\n");
         ec_close();
         return false;
     }
@@ -382,8 +446,8 @@ bool ethercat_init(void)
     for (int i = 0; i < g_motor_control.num_motors; i++)
     {
         int slave_index = g_motor_control.slave_indices[i];
-        g_motor_control.rxpdo[i] = (rxpdo_t*)(ec_slave[slave_index].outputs);
-        g_motor_control.txpdo[i] = (txpdo_t*)(ec_slave[slave_index].inputs);
+        g_motor_control.rxpdo[i] = (rxpdo_t *)(ec_slave[slave_index].outputs);
+        g_motor_control.txpdo[i] = (txpdo_t *)(ec_slave[slave_index].inputs);
     }
 
     return true;
@@ -419,7 +483,7 @@ int read_i2t_protection_mode(int slave)
         return -1;
     }
 
-    const char* mode_descriptions[] = {"Disabled",
+    const char *mode_descriptions[] = {"Disabled",
                                        "Current Limitation",
                                        "Error Protection",
                                        "Current Limitation (compatibility)",
@@ -452,7 +516,7 @@ bool configure_i2t_protection(int slave, uint8_t i2t_mode)
     return true;
 }
 
-bool read_fault_codes(int slave, fault_codes_t* fault_codes)
+bool read_fault_codes(int slave, fault_codes_t *fault_codes)
 {
     int ret, size;
 
